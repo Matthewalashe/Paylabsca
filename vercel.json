@@ -1,4 +1,5 @@
 {
+  "name": "paylabsca",
   "rewrites": [
     { "source": "/((?!assets|lasbca-logo|lagos-coat|stamp|signature|sample).*)", "destination": "/index.html" }
   ]
