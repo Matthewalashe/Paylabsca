@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+/* ============================================================
+   LASBCA Design System — Custom Theme
+   ============================================================ */
+
+@theme inline {
+  --color-lasbca-green: #006400;
+  --color-lasbca-green-light: #0a8a0a;
+  --color-lasbca-gold: #D4AF37;
+  --color-lasbca-red: #c41e3a;
+  --color-lasbca-red-light: #e63946;
+  --color-invoice-bg: #fdf6f0;
+  --color-invoice-border: #e8888a;
+  --color-invoice-header-red: #c0392b;
+  --color-invoice-total-green: #27ae60;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Base styles */
+body {
+  font-family: var(--font-sans);
+  background-color: #f5f5f5;
+  color: #1a1a1a;
+}
+
+/* Invoice-specific styles */
+.invoice-page {
+  width: 210mm;
+  min-height: 297mm;
+  background: white;
+  margin: 0 auto;
+  padding: 15mm 12mm;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+
+.invoice-pink-border {
+  border: 2px solid #e8888a;
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.invoice-red-dashed {
+  border: 2px dashed #c0392b;
+  border-radius: 4px;
+  padding: 16px;
+}
+
+/* Red table header */
+.invoice-table-header {
+  background-color: #c0392b;
+  color: white;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+/* Green total bar */
+.invoice-total-bar {
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  color: white;
+  font-weight: 800;
+  font-size: 18px;
+  padding: 10px 16px;
+  border-radius: 4px;
+}
+
+/* Stamp overlay */
+.stamp-overlay {
+  position: relative;
+}
+
+.stamp-overlay .stamp-image {
+  opacity: 0.85;
+  transform: rotate(-5deg);
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white;
+    margin: 0;
+    padding: 0;
+  }
+
+  .invoice-page {
+    box-shadow: none;
+    margin: 0;
+    padding: 10mm;
+    width: 100%;
+    min-height: auto;
+    page-break-after: always;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
