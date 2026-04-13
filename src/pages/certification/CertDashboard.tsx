@@ -1,5 +1,5 @@
 // ============================================================
-// CertDashboard.tsx — Certification Officer Dashboard
+// CertDashboard.tsx — Clean certification dashboard
 // ============================================================
 
 import { Link } from "react-router-dom";
@@ -9,8 +9,8 @@ import { useInvoiceStore } from "@/lib/invoice-store";
 import { useAuth } from "@/lib/auth";
 import { formatNaira } from "@/lib/types";
 import {
-  Shield, FileText, Clock, CheckCircle, XCircle, Users,
-  Eye, Calendar, ArrowUpRight, AlertTriangle, BarChart3,
+  FileText, Clock, CheckCircle, XCircle, Users,
+  Eye, ArrowRight, AlertTriangle, BarChart3, Settings,
 } from "lucide-react";
 
 export default function CertDashboard() {
@@ -23,70 +23,70 @@ export default function CertDashboard() {
   const totalRevenue = invoices.filter(i => i.status === "paid").reduce((s, i) => s + i.totalAmount, 0);
 
   return (
-    <div className="p-4 lg:p-6 space-y-6">
+    <div className="p-5 lg:p-8 space-y-6 max-w-6xl">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-gray-900">Certification Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Welcome, {user?.name || "Officer"}.{" "}
-            {pending.length > 0 && <span className="text-amber-600 font-semibold">{pending.length} invoice(s) awaiting your review.</span>}
+          <h1 className="text-xl font-bold text-gray-900">Welcome, {user?.name?.split(" ")[0]}</h1>
+          <p className="text-[13px] text-gray-400 mt-0.5">
+            {pending.length > 0
+              ? <span className="text-[#D4AF37] font-medium">{pending.length} invoice{pending.length > 1 ? "s" : ""} awaiting review</span>
+              : "No pending reviews"
+            }
           </p>
         </div>
         <Link to="/certification/users">
-          <Button variant="outline"><Users className="w-4 h-4" /> Manage Users</Button>
+          <Button variant="outline" className="h-9 text-[13px] rounded-lg border-gray-200">
+            <Users className="w-3.5 h-3.5" /> Users
+          </Button>
         </Link>
       </div>
 
       {/* Stats */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { title: "Pending Review", value: pending.length, icon: Clock, bg: "bg-amber-100", color: "text-amber-600", urgent: pending.length > 0 },
-          { title: "Approved", value: approved.length, icon: CheckCircle, bg: "bg-green-100", color: "text-green-600", urgent: false },
-          { title: "Rejected", value: rejected.length, icon: XCircle, bg: "bg-red-100", color: "text-red-600", urgent: false },
-          { title: "Revenue Collected", value: `₦${formatNaira(totalRevenue)}`, icon: BarChart3, bg: "bg-purple-100", color: "text-purple-600", urgent: false },
+          { label: "Pending", value: pending.length, icon: Clock, color: "#D4AF37", urgent: pending.length > 0 },
+          { label: "Approved", value: approved.length, icon: CheckCircle, color: "#16a34a", urgent: false },
+          { label: "Rejected", value: rejected.length, icon: XCircle, color: "#dc2626", urgent: false },
+          { label: "Revenue", value: `₦${formatNaira(totalRevenue)}`, icon: BarChart3, color: "#006400", urgent: false },
         ].map(s => {
           const Icon = s.icon;
           return (
-            <div key={s.title} className={`bg-white rounded-xl border ${s.urgent ? "border-amber-300 ring-2 ring-amber-100" : "border-gray-200"} p-5 hover:shadow-md transition-shadow`}>
-              <div className="flex items-start justify-between mb-3">
-                <div className={`w-10 h-10 rounded-lg ${s.bg} flex items-center justify-center`}>
-                  <Icon className={`w-5 h-5 ${s.color}`} />
-                </div>
-                {s.urgent && <span className="animate-pulse w-3 h-3 rounded-full bg-amber-400" />}
+            <div key={s.label} className={`bg-white rounded-xl border ${s.urgent ? "border-[#D4AF37]/30" : "border-gray-100"} p-4`}>
+              <div className="flex items-center justify-between mb-3">
+                <Icon className="w-4 h-4" style={{ color: s.color }} strokeWidth={1.5} />
+                <span className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">{s.label}</span>
               </div>
-              <p className="text-2xl font-black text-gray-900">{s.value}</p>
-              <p className="text-xs text-gray-500 mt-1">{s.title}</p>
+              <p className="text-2xl font-bold text-gray-900 tracking-tight">{s.value}</p>
+              {s.urgent && <div className="w-full h-0.5 bg-[#D4AF37]/20 rounded-full mt-3"><div className="h-full bg-[#D4AF37] rounded-full animate-pulse" style={{ width: "60%" }} /></div>}
             </div>
           );
         })}
       </div>
 
-      {/* Pending Review — Highlighted */}
+      {/* Pending Review — Priority */}
       {pending.length > 0 && (
-        <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
+        <div className="bg-white rounded-xl border border-[#D4AF37]/20 p-4">
           <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600" />
-            <h2 className="font-bold text-amber-800">Invoices Awaiting Your Review</h2>
+            <AlertTriangle className="w-4 h-4 text-[#D4AF37]" />
+            <span className="text-[12px] font-semibold text-gray-900">Awaiting Review</span>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {pending.map(inv => (
               <Link
                 key={inv.id}
                 to={`/certification/review/${inv.id}`}
-                className="flex items-center gap-4 bg-white rounded-lg p-3 border border-amber-100 hover:shadow-md hover:border-amber-300 transition-all"
+                className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors group"
               >
-                <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-amber-600" />
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-3.5 h-3.5 text-[#D4AF37]" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <span className="font-mono text-xs font-bold text-gray-900">{inv.invoiceNumber}</span>
-                  <p className="text-sm text-gray-600 truncate">{inv.clientName} — {inv.propertyAddress}</p>
+                  <span className="font-mono text-[11px] font-bold text-gray-900">{inv.invoiceNumber}</span>
+                  <p className="text-[11px] text-gray-400 truncate">{inv.clientName}</p>
                 </div>
-                <div className="text-right">
-                  <p className="font-bold text-gray-900">₦{formatNaira(inv.totalAmount)}</p>
-                </div>
-                <Button size="sm" variant="gold">Review</Button>
+                <p className="font-semibold text-gray-900 text-[13px]">₦{formatNaira(inv.totalAmount)}</p>
+                <Button size="sm" className="h-7 text-[11px] rounded-lg bg-[#D4AF37] hover:bg-[#c9a430] text-white opacity-0 group-hover:opacity-100 transition-opacity">Review</Button>
               </Link>
             ))}
           </div>
@@ -94,52 +94,58 @@ export default function CertDashboard() {
       )}
 
       {/* Quick Actions */}
-      <div className="grid sm:grid-cols-3 gap-4">
-        <Link to="/certification/pending" className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl p-5 text-white hover:shadow-lg transition-shadow">
-          <Clock className="w-8 h-8 mb-3 opacity-80" />
-          <h3 className="font-bold mb-1">Pending Reviews</h3>
-          <p className="text-sm text-amber-100">{pending.length} invoice(s) waiting</p>
+      <div className="grid grid-cols-3 gap-3">
+        <Link to="/certification/pending" className="group bg-white rounded-xl p-5 border border-gray-100 hover:border-[#D4AF37]/30 transition-colors">
+          <Clock className="w-5 h-5 text-[#D4AF37] mb-6" strokeWidth={1.5} />
+          <p className="text-gray-900 font-semibold text-[13px]">Pending</p>
+          <p className="text-[11px] text-gray-400">{pending.length} waiting</p>
         </Link>
-        <Link to="/certification/approved" className="bg-gradient-to-br from-green-600 to-green-700 rounded-xl p-5 text-white hover:shadow-lg transition-shadow">
-          <CheckCircle className="w-8 h-8 mb-3 opacity-80" />
-          <h3 className="font-bold mb-1">Approved Invoices</h3>
-          <p className="text-sm text-green-200">{approved.length} approved</p>
+        <Link to="/certification/approved" className="group bg-white rounded-xl p-5 border border-gray-100 hover:border-green-200 transition-colors">
+          <CheckCircle className="w-5 h-5 text-green-500 mb-6" strokeWidth={1.5} />
+          <p className="text-gray-900 font-semibold text-[13px]">Approved</p>
+          <p className="text-[11px] text-gray-400">{approved.length} total</p>
         </Link>
-        <Link to="/certification/users" className="bg-gradient-to-br from-gray-700 to-gray-900 rounded-xl p-5 text-white hover:shadow-lg transition-shadow">
-          <Users className="w-8 h-8 mb-3 opacity-80" />
-          <h3 className="font-bold mb-1">User Management</h3>
-          <p className="text-sm text-gray-300">Create, edit, and manage users</p>
+        <Link to="/certification/users" className="group bg-white rounded-xl p-5 border border-gray-100 hover:border-gray-200 transition-colors">
+          <Users className="w-5 h-5 text-gray-400 mb-6" strokeWidth={1.5} />
+          <p className="text-gray-900 font-semibold text-[13px]">Users</p>
+          <p className="text-[11px] text-gray-400">Manage access</p>
         </Link>
       </div>
 
       {/* All Invoices */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-        <div className="p-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">All Invoices</h2>
+      {invoices.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-100">
+          <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+            <span className="text-[12px] font-semibold text-gray-900">All Invoices</span>
+            <Link to="/invoices" className="text-[11px] text-[#006400] font-semibold hover:underline">View all</Link>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {invoices.slice(0, 5).map(inv => (
+              <Link
+                key={inv.id}
+                to={inv.status === "pending_approval" ? `/certification/review/${inv.id}` : `/invoices/${inv.id}`}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/50 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] font-bold text-gray-900">{inv.invoiceNumber}</span>
+                    <Badge variant={
+                      inv.status === "draft" ? "draft" : inv.status === "pending_approval" ? "pending" :
+                      inv.status === "approved" ? "approved" : inv.status === "paid" ? "paid" :
+                      inv.status === "rejected" ? "rejected" : "sent"
+                    }>
+                      {inv.status === "pending_approval" ? "Pending" : inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
+                    </Badge>
+                  </div>
+                  <p className="text-[12px] text-gray-400 truncate mt-0.5">{inv.clientName}</p>
+                </div>
+                <p className="font-semibold text-gray-900 text-[13px]">₦{formatNaira(inv.totalAmount)}</p>
+                <Eye className="w-3.5 h-3.5 text-gray-200" />
+              </Link>
+            ))}
+          </div>
         </div>
-        <div className="divide-y divide-gray-50">
-          {invoices.slice(0, 6).map(inv => (
-            <Link key={inv.id} to={inv.status === "pending_approval" ? `/certification/review/${inv.id}` : `/invoices/${inv.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50/50 transition-colors">
-              <div className={`w-9 h-9 rounded-lg ${inv.status === "pending_approval" ? "bg-amber-50" : "bg-green-50"} flex items-center justify-center`}>
-                <FileText className={`w-4 h-4 ${inv.status === "pending_approval" ? "text-amber-600" : "text-green-600"}`} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="font-mono text-xs font-bold text-gray-900">{inv.invoiceNumber}</span>
-                <p className="text-sm text-gray-600 truncate">{inv.clientName}</p>
-              </div>
-              <Badge variant={
-                inv.status === "draft" ? "draft" : inv.status === "pending_approval" ? "pending" :
-                inv.status === "approved" ? "approved" : inv.status === "paid" ? "paid" :
-                inv.status === "rejected" ? "rejected" : "sent"
-              }>
-                {inv.status === "pending_approval" ? "Pending" : inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
-              </Badge>
-              <p className="font-bold text-gray-900 text-sm">₦{formatNaira(inv.totalAmount)}</p>
-              <Eye className="w-4 h-4 text-gray-300" />
-            </Link>
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
