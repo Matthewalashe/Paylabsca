@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import ProtectedRoute from "@/components/layout/ProtectedRoute";
 import LandingPage from "@/pages/LandingPage";
+import LoginPage from "@/pages/LoginPage";
 import BillingDashboard from "@/pages/billing/BillingDashboard";
 import CertDashboard from "@/pages/certification/CertDashboard";
 import InvoiceEditorPage from "@/pages/InvoiceEditorPage";
@@ -35,8 +36,9 @@ export default function App() {
         <InvoiceStoreProvider>
           <BrowserRouter>
             <Routes>
-              {/* Public landing page */}
+              {/* Public pages */}
               <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<LoginPage />} />
 
               {/* Billing Officer Routes */}
               <Route path="/billing" element={
