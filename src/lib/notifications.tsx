@@ -1,12 +1,10 @@
 // ============================================================
-// notifications.tsx — Role-scoped notification system
-// ============================================================
-// Each notification targets a specific role so billing and
-// certification officers see ONLY their own notifications.
+// notifications.tsx — Supabase-backed notification system
 // ============================================================
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
-import { useAuth } from "@/lib/auth";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { supabase } from "./supabase";
+import { useAuth } from "./auth";
 
 export type NotificationType = "approval" | "rejection" | "submission" | "payment" | "info";
 
@@ -21,7 +19,6 @@ export interface Notification {
   createdAt: string;
   fromUser?: string;
   fromRole?: string;
-  /** Which role should see this notification */
   targetRole: "billing_officer" | "certification_officer" | "all";
 }
 
@@ -34,6 +31,23 @@ interface NotificationContextType {
   clearAll: () => void;
 }
 
+/** Convert DB row to Notification */
+function dbToNotification(row: any): Notification {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    message: row.message || "",
+    invoiceId: row.invoice_id,
+    invoiceNumber: row.invoice_number,
+    read: row.read,
+    createdAt: row.created_at,
+    fromUser: row.from_user,
+    fromRole: row.from_role,
+    targetRole: row.target_role || "all",
+  };
+}
+
 const NotificationContext = createContext<NotificationContextType>({
   notifications: [],
   unreadCount: 0,
@@ -43,89 +57,95 @@ const NotificationContext = createContext<NotificationContextType>({
   clearAll: () => {},
 });
 
-// Initial demo notifications — properly targeted to roles
-const INITIAL_NOTIFICATIONS: Notification[] = [
-  {
-    id: "n1",
-    type: "submission",
-    title: "New Invoice Submitted",
-    message: "Invoice INV-UBA-20260313-002 has been submitted for your review.",
-    invoiceId: "inv-002",
-    invoiceNumber: "INV-UBA-20260313-002",
-    read: false,
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    fromUser: "Adeyemi Ogunlade",
-    fromRole: "Billing Officer",
-    targetRole: "certification_officer",
-  },
-  {
-    id: "n2",
-    type: "approval",
-    title: "Invoice Approved ✅",
-    message: "Invoice INV-UBA-20260313-001 for United Bank For Africa has been approved and is ready to send to the client.",
-    invoiceId: "inv-001",
-    invoiceNumber: "INV-UBA-20260313-001",
-    read: false,
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-    fromUser: "Arc. Bolatito Mustapha",
-    fromRole: "Certification Officer",
-    targetRole: "billing_officer",
-  },
-];
-
 export function NotificationProvider({ children }: { children: ReactNode }) {
-  const [allNotifications, setAllNotifications] = useState<Notification[]>(() => {
-    try {
-      const saved = localStorage.getItem("lasbca_notifications_v2");
-      return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS;
-    } catch {
-      return INITIAL_NOTIFICATIONS;
+  const { user, isAuthenticated } = useAuth();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  // Fetch notifications
+  const fetchNotifications = useCallback(async () => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .or(`target_role.eq.${user.role},target_role.eq.all,target_user_id.eq.${user.id}`)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (!error && data) {
+      setNotifications(data.map(dbToNotification));
     }
-  });
+  }, [user]);
 
-  const persist = (items: Notification[]) => {
-    localStorage.setItem("lasbca_notifications_v2", JSON.stringify(items));
-  };
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      fetchNotifications();
+    } else {
+      setNotifications([]);
+    }
+  }, [isAuthenticated, user, fetchNotifications]);
 
-  const addNotification = useCallback((n: Omit<Notification, "id" | "read" | "createdAt">) => {
-    const newN: Notification = {
-      ...n,
-      id: crypto.randomUUID(),
-      read: false,
-      createdAt: new Date().toISOString(),
+  // Realtime subscription
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+
+    const channel = supabase
+      .channel("notifications-changes")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications" },
+        () => { fetchNotifications(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [isAuthenticated, user, fetchNotifications]);
+
+  const filtered = notifications;
+  const unreadCount = filtered.filter(n => !n.read).length;
+
+  const addNotification = useCallback(async (n: Omit<Notification, "id" | "read" | "createdAt">) => {
+    const row = {
+      type: n.type,
+      title: n.title,
+      message: n.message,
+      invoice_id: n.invoiceId || null,
+      invoice_number: n.invoiceNumber || null,
+      target_role: n.targetRole,
+      from_user: n.fromUser || null,
+      from_role: n.fromRole || null,
     };
-    setAllNotifications(prev => {
-      const updated = [newN, ...prev];
-      persist(updated);
-      return updated;
-    });
+
+    const { error } = await supabase.from("notifications").insert(row);
+    if (error) console.error("Failed to add notification:", error);
+    // Realtime will handle the UI update
   }, []);
 
-  const markAsRead = useCallback((id: string) => {
-    setAllNotifications(prev => {
-      const updated = prev.map(n => n.id === id ? { ...n, read: true } : n);
-      persist(updated);
-      return updated;
-    });
+  const markAsRead = useCallback(async (id: string) => {
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   }, []);
 
-  const markAllAsRead = useCallback(() => {
-    setAllNotifications(prev => {
-      const updated = prev.map(n => ({ ...n, read: true }));
-      persist(updated);
-      return updated;
-    });
-  }, []);
+  const markAllAsRead = useCallback(async () => {
+    if (!user) return;
+    const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+    if (unreadIds.length === 0) return;
+    await supabase.from("notifications").update({ read: true }).in("id", unreadIds);
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  }, [notifications, user]);
 
-  const clearAll = useCallback(() => {
-    setAllNotifications([]);
-    persist([]);
-  }, []);
+  const clearAll = useCallback(async () => {
+    if (!user) return;
+    const ids = notifications.map(n => n.id);
+    if (ids.length === 0) return;
+    await supabase.from("notifications").delete().in("id", ids);
+    setNotifications([]);
+  }, [notifications, user]);
 
   return (
     <NotificationContext.Provider value={{
-      notifications: allNotifications,
-      unreadCount: 0, // placeholder — computed in hook
+      notifications: filtered,
+      unreadCount,
       addNotification,
       markAsRead,
       markAllAsRead,
@@ -136,31 +156,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Returns notifications filtered to the current user's role.
- * Billing officers only see billing-targeted notifications.
- * Certification officers only see cert-targeted notifications.
- */
 export function useNotifications() {
-  const ctx = useContext(NotificationContext);
-  const { user } = useAuth();
-
-  const userRole = user?.role;
-
-  // Filter notifications to only show those targeted at the current user's role
-  const filtered = ctx.notifications.filter(n => {
-    if (n.targetRole === "all") return true;
-    return n.targetRole === userRole;
-  });
-
-  const unreadCount = filtered.filter(n => !n.read).length;
-
-  return {
-    notifications: filtered,
-    unreadCount,
-    addNotification: ctx.addNotification,
-    markAsRead: ctx.markAsRead,
-    markAllAsRead: ctx.markAllAsRead,
-    clearAll: ctx.clearAll,
-  };
+  return useContext(NotificationContext);
 }

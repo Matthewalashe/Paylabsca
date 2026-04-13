@@ -2,7 +2,7 @@
 // UserManagementPage.tsx — Full user CRUD with auth management
 // ============================================================
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,17 @@ import {
 
 export default function UserManagementPage() {
   const { getAllUsers, createUser, deleteUser, updateUserRole, resetPassword, suspendUser, activateUser } = useAuth();
-  const users = getAllUsers();
+  const [users, setUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+
+  const loadUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    const data = await getAllUsers();
+    setUsers(data);
+    setLoadingUsers(false);
+  }, [getAllUsers]);
+
+  useEffect(() => { loadUsers(); }, [loadUsers]);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -51,9 +61,9 @@ export default function UserManagementPage() {
     u.oracleNumber.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     if (!newName.trim() || !newEmail.trim() || !newPhone.trim() || !newOracle.trim() || !newPassword) return;
-    const result = createUser({
+    const result = await createUser({
       name: newName,
       email: newEmail,
       phone: newPhone,
@@ -62,48 +72,54 @@ export default function UserManagementPage() {
       password: newPassword,
     });
     if (result.success) {
-      toast.success(`User "${newName}" created successfully with ${newRole === "billing_officer" ? "Billing" : "Certification"} Officer role.`);
+      toast.success(`User "${newName}" created successfully.`);
       setNewName(""); setNewEmail(""); setNewPhone(""); setNewOracle(""); setNewRole("billing_officer"); setNewPassword("");
       setShowAddForm(false);
+      loadUsers();
     } else {
       toast.error(result.error || "Failed to create user.");
     }
     setConfirmAction(null);
   };
 
-  const handleDeleteUser = (id: string) => {
-    deleteUser(id);
+  const handleDeleteUser = async (id: string) => {
+    await deleteUser(id);
     toast.success("User account removed.");
     setConfirmAction(null);
+    loadUsers();
   };
 
-  const handleUpgradeUser = (id: string) => {
-    updateUserRole(id, "certification_officer");
+  const handleUpgradeUser = async (id: string) => {
+    await updateUserRole(id, "certification_officer");
     toast.success("User upgraded to Certification Officer.");
     setConfirmAction(null);
+    loadUsers();
   };
 
-  const handleDowngradeUser = (id: string) => {
-    updateUserRole(id, "billing_officer");
+  const handleDowngradeUser = async (id: string) => {
+    await updateUserRole(id, "billing_officer");
     toast.success("User downgraded to Billing Officer.");
     setConfirmAction(null);
+    loadUsers();
   };
 
-  const handleSuspendUser = (id: string) => {
-    suspendUser(id);
+  const handleSuspendUser = async (id: string) => {
+    await suspendUser(id);
     toast.success("User account suspended.");
     setConfirmAction(null);
+    loadUsers();
   };
 
-  const handleActivateUser = (id: string) => {
-    activateUser(id);
+  const handleActivateUser = async (id: string) => {
+    await activateUser(id);
     toast.success("User account activated.");
     setConfirmAction(null);
+    loadUsers();
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     if (!resetModal || !resetNewPass) return;
-    resetPassword(resetModal.userId, resetNewPass);
+    await resetPassword(resetModal.userId, resetNewPass);
     toast.success(`Password reset for ${resetModal.userName}.`);
     setResetModal(null);
     setResetNewPass("");

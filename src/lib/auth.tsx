@@ -1,12 +1,14 @@
 // ============================================================
-// auth.tsx — Dynamic credential-based auth with user management
+// auth.tsx — Supabase-backed authentication
 // ============================================================
-// Users sign in with email + password.
-// Certification Officers can create, edit, reset passwords.
-// User registry persists in localStorage.
+// Real JWT sessions via Supabase Auth.
+// Cert Officers create users via signUp + profile insert.
+// Falls back to offline mode if Supabase is unavailable.
 // ============================================================
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { supabase, createAdminClient } from "./supabase";
+import type { Session } from "@supabase/supabase-js";
 
 export type UserRole = "billing_officer" | "certification_officer";
 
@@ -21,228 +23,244 @@ export interface AppUser {
   avatar?: string;
 }
 
-/** Internal type — user + password for credential matching */
-export interface UserCredentials extends AppUser {
-  password: string;
-  createdAt: string;
-  status: "active" | "suspended";
-}
-
-// Default seed users (only used on first load)
-const DEFAULT_CREDENTIALS: UserCredentials[] = [
-  {
-    id: "co-001",
-    name: "Arc. Bolatito Mustapha",
-    email: "b.mustapha@lasbca.lg.gov.ng",
-    password: "Certify@2026",
-    phone: "+2348098765432",
-    oracleNumber: "ORC-2024-0100",
-    role: "certification_officer",
-    department: "Building Certification Department",
-    avatar: "BM",
-    createdAt: "2026-01-01T00:00:00Z",
-    status: "active",
-  },
-  {
-    id: "bo-001",
-    name: "Adeyemi Ogunlade",
-    email: "a.ogunlade@lasbca.lg.gov.ng",
-    password: "Billing@2026",
-    phone: "+2348012345678",
-    oracleNumber: "ORC-2024-0451",
-    role: "billing_officer",
-    department: "Building Certification Department",
-    avatar: "AO",
-    createdAt: "2026-01-15T00:00:00Z",
-    status: "active",
-  },
-  {
-    id: "bo-002",
-    name: "Funke Adebayo",
-    email: "f.adebayo@lasbca.lg.gov.ng",
-    password: "Billing@2026",
-    phone: "+2348055512345",
-    oracleNumber: "ORC-2024-0452",
-    role: "billing_officer",
-    department: "Building Certification Department",
-    avatar: "FA",
-    createdAt: "2026-02-01T00:00:00Z",
-    status: "active",
-  },
-  {
-    id: "bo-003",
-    name: "Chidi Nwosu",
-    email: "c.nwosu@lasbca.lg.gov.ng",
-    password: "Billing@2026",
-    phone: "+2348033398765",
-    oracleNumber: "ORC-2024-0453",
-    role: "billing_officer",
-    department: "Building Certification Department",
-    avatar: "CN",
-    createdAt: "2026-02-15T00:00:00Z",
-    status: "active",
-  },
-];
-
-const STORAGE_KEY = "lasbca_user_registry";
-
-/** Load user registry from localStorage or seed from defaults */
-function loadUserRegistry(): UserCredentials[] {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch { /* ignore */ }
-  // First time — seed with defaults
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_CREDENTIALS));
-  return [...DEFAULT_CREDENTIALS];
-}
-
-function saveUserRegistry(users: UserCredentials[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-}
-
-// Strip passwords for public consumption
-function toAppUser(cred: UserCredentials): AppUser {
-  const { password, createdAt, status, ...user } = cred;
-  return user;
-}
-
-// ============================================================
-// Context
-// ============================================================
-
 interface AuthContextType {
   user: AppUser | null;
   isAuthenticated: boolean;
-  loginWithCredentials: (email: string, password: string) => { success: boolean; error?: string };
+  isLoading: boolean;
+  loginWithCredentials: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   login: (role: UserRole) => void;
   logout: () => void;
-  // User management (for Certification Officers)
-  getAllUsers: () => (AppUser & { status: string; createdAt: string })[];
-  createUser: (data: { name: string; email: string; phone: string; oracleNumber: string; role: UserRole; password: string; department?: string }) => { success: boolean; error?: string };
-  deleteUser: (id: string) => boolean;
-  updateUserRole: (id: string, role: UserRole) => boolean;
-  resetPassword: (id: string, newPassword: string) => boolean;
-  suspendUser: (id: string) => boolean;
-  activateUser: (id: string) => boolean;
+  // User management
+  getAllUsers: () => Promise<(AppUser & { status: string; createdAt: string })[]>;
+  createUser: (data: { name: string; email: string; phone: string; oracleNumber: string; role: UserRole; password: string; department?: string }) => Promise<{ success: boolean; error?: string }>;
+  deleteUser: (id: string) => Promise<boolean>;
+  updateUserRole: (id: string, role: UserRole) => Promise<boolean>;
+  resetPassword: (id: string, newPassword: string) => Promise<boolean>;
+  suspendUser: (id: string) => Promise<boolean>;
+  activateUser: (id: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isAuthenticated: false,
-  loginWithCredentials: () => ({ success: false }),
+  isLoading: true,
+  loginWithCredentials: async () => ({ success: false }),
   login: () => {},
   logout: () => {},
-  getAllUsers: () => [],
-  createUser: () => ({ success: false }),
-  deleteUser: () => false,
-  updateUserRole: () => false,
-  resetPassword: () => false,
-  suspendUser: () => false,
-  activateUser: () => false,
+  getAllUsers: async () => [],
+  createUser: async () => ({ success: false }),
+  deleteUser: async () => false,
+  updateUserRole: async () => false,
+  resetPassword: async () => false,
+  suspendUser: async () => false,
+  activateUser: async () => false,
 });
 
+/** Convert DB profile row to AppUser */
+function toAppUser(profile: any): AppUser {
+  return {
+    id: profile.id,
+    name: profile.name,
+    email: profile.email,
+    phone: profile.phone || "",
+    oracleNumber: profile.oracle_number || "",
+    role: profile.role as UserRole,
+    department: profile.department || "Building Certification Department",
+    avatar: profile.avatar || profile.name?.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2),
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AppUser | null>(() => {
-    try {
-      const saved = localStorage.getItem("lasbca_user");
-      return saved ? JSON.parse(saved) : null;
-    } catch { return null; }
-  });
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Force-initialize registry on mount
-  const [registry, setRegistry] = useState<UserCredentials[]>(loadUserRegistry);
-
+  // Listen for auth state changes
   useEffect(() => {
-    if (user) {
-      localStorage.setItem("lasbca_user", JSON.stringify(user));
+    // Check initial session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        await loadProfile(session.user.id);
+      }
+      setIsLoading(false);
+    });
+
+    // Subscribe to auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        await loadProfile(session.user.id);
+      } else if (event === "SIGNED_OUT") {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function loadProfile(userId: string) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    if (data && !error) {
+      setUser(toAppUser(data));
     } else {
-      localStorage.removeItem("lasbca_user");
+      console.error("Failed to load profile:", error);
+      setUser(null);
     }
-  }, [user]);
+  }
 
-  useEffect(() => {
-    saveUserRegistry(registry);
-  }, [registry]);
+  const loginWithCredentials = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
 
-  const loginWithCredentials = (email: string, password: string) => {
-    const trimEmail = email.trim().toLowerCase();
-    const match = registry.find(
-      u => u.email.toLowerCase() === trimEmail && u.password === password
-    );
-    if (!match) return { success: false, error: "Invalid email or password." };
-    if (match.status === "suspended") return { success: false, error: "Account suspended. Contact your administrator." };
-    setUser(toAppUser(match));
+    if (error) {
+      return { success: false, error: error.message === "Invalid login credentials"
+        ? "Invalid email or password."
+        : error.message };
+    }
+
+    if (data.user) {
+      // Check if profile is suspended
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("status")
+        .eq("id", data.user.id)
+        .single();
+
+      if (profile?.status === "suspended") {
+        await supabase.auth.signOut();
+        return { success: false, error: "Account suspended. Contact your administrator." };
+      }
+
+      await loadProfile(data.user.id);
+    }
+
     return { success: true };
   };
 
-  const login = (role: UserRole) => {
-    const match = registry.find(u => u.role === role && u.status === "active");
-    if (match) setUser(toAppUser(match));
+  const login = (_role: UserRole) => {
+    // Legacy — no-op with Supabase auth
   };
 
-  const logout = () => setUser(null);
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
 
   // ---- User Management ----
-  const getAllUsers = () => registry.map(u => ({
-    ...toAppUser(u),
-    status: u.status,
-    createdAt: u.createdAt,
-  }));
 
-  const createUser = (data: { name: string; email: string; phone: string; oracleNumber: string; role: UserRole; password: string; department?: string }) => {
-    if (registry.some(u => u.email.toLowerCase() === data.email.toLowerCase())) {
-      return { success: false, error: "A user with this email already exists." };
+  const getAllUsers = async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: true });
+
+    if (error || !data) return [];
+
+    return data.map((p: any) => ({
+      ...toAppUser(p),
+      status: p.status || "active",
+      createdAt: p.created_at,
+    }));
+  };
+
+  const createUser = async (userData: {
+    name: string; email: string; phone: string;
+    oracleNumber: string; role: UserRole; password: string; department?: string;
+  }) => {
+    // Use a separate client so we don't log out the current user
+    const adminClient = createAdminClient();
+
+    // 1. Create auth user
+    const { data: authData, error: authError } = await adminClient.auth.signUp({
+      email: userData.email.trim().toLowerCase(),
+      password: userData.password,
+    });
+
+    if (authError || !authData.user) {
+      return { success: false, error: authError?.message || "Failed to create auth account." };
     }
-    const newUser: UserCredentials = {
-      id: `user-${Date.now()}`,
-      name: data.name.trim(),
-      email: data.email.trim(),
-      phone: data.phone.trim(),
-      oracleNumber: data.oracleNumber.trim(),
-      role: data.role,
-      department: data.department || "Building Certification Department",
-      avatar: data.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2),
-      password: data.password,
-      createdAt: new Date().toISOString(),
+
+    // 2. Insert profile
+    const { error: profileError } = await supabase.from("profiles").insert({
+      id: authData.user.id,
+      name: userData.name.trim(),
+      email: userData.email.trim().toLowerCase(),
+      phone: userData.phone.trim(),
+      oracle_number: userData.oracleNumber.trim(),
+      role: userData.role,
+      department: userData.department || "Building Certification Department",
+      avatar: userData.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2),
       status: "active",
-    };
-    setRegistry(prev => [...prev, newUser]);
+    });
+
+    if (profileError) {
+      return { success: false, error: profileError.message };
+    }
+
+    // 3. Audit log
+    if (user) {
+      await supabase.from("audit_log").insert({
+        user_id: user.id,
+        action: "create_user",
+        entity_type: "profile",
+        entity_id: authData.user.id,
+        details: { name: userData.name, email: userData.email, role: userData.role },
+      });
+    }
+
     return { success: true };
   };
 
-  const deleteUser = (id: string) => {
-    if (id === "co-001") return false; // Can't delete primary admin
-    setRegistry(prev => prev.filter(u => u.id !== id));
-    return true;
+  const deleteUser = async (id: string) => {
+    if (id === user?.id) return false; // Can't delete self
+    const { error } = await supabase.from("profiles").delete().eq("id", id);
+    if (!error && user) {
+      await supabase.from("audit_log").insert({
+        user_id: user.id, action: "delete_user", entity_type: "profile", entity_id: id,
+      });
+    }
+    return !error;
   };
 
-  const updateUserRole = (id: string, role: UserRole) => {
-    if (id === "co-001") return false;
-    setRegistry(prev => prev.map(u => u.id === id ? { ...u, role } : u));
-    return true;
+  const updateUserRole = async (id: string, role: UserRole) => {
+    const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
+    if (!error && user) {
+      await supabase.from("audit_log").insert({
+        user_id: user.id, action: "update_role", entity_type: "profile", entity_id: id,
+        details: { new_role: role },
+      });
+    }
+    return !error;
   };
 
-  const resetPassword = (id: string, newPassword: string) => {
-    setRegistry(prev => prev.map(u => u.id === id ? { ...u, password: newPassword } : u));
-    return true;
+  const resetPassword = async (_id: string, _newPassword: string) => {
+    // Password reset requires admin/service_role key — not available client-side
+    // For now, this is a placeholder. Would need an Edge Function in production.
+    console.warn("Password reset requires server-side implementation (Edge Function).");
+    return false;
   };
 
-  const suspendUser = (id: string) => {
-    if (id === "co-001") return false;
-    setRegistry(prev => prev.map(u => u.id === id ? { ...u, status: "suspended" as const } : u));
-    return true;
+  const suspendUser = async (id: string) => {
+    const { error } = await supabase.from("profiles").update({ status: "suspended" }).eq("id", id);
+    return !error;
   };
 
-  const activateUser = (id: string) => {
-    setRegistry(prev => prev.map(u => u.id === id ? { ...u, status: "active" as const } : u));
-    return true;
+  const activateUser = async (id: string) => {
+    const { error } = await supabase.from("profiles").update({ status: "active" }).eq("id", id);
+    return !error;
   };
 
   return (
     <AuthContext.Provider value={{
-      user, isAuthenticated: !!user, loginWithCredentials, login, logout,
-      getAllUsers, createUser, deleteUser, updateUserRole, resetPassword, suspendUser, activateUser,
+      user, isAuthenticated: !!user, isLoading,
+      loginWithCredentials, login, logout,
+      getAllUsers, createUser, deleteUser, updateUserRole,
+      resetPassword, suspendUser, activateUser,
     }}>
       {children}
     </AuthContext.Provider>
@@ -253,9 +271,9 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-// Public user list helper (for backward compatibility)
-export const ALL_USERS: AppUser[] = DEFAULT_CREDENTIALS.map(u => toAppUser(u));
+// Backward compat exports
+export const ALL_USERS: AppUser[] = [];
 export const DEMO_USERS: Record<UserRole, AppUser> = {
-  billing_officer: ALL_USERS.find(u => u.role === "billing_officer")!,
-  certification_officer: ALL_USERS.find(u => u.role === "certification_officer")!,
+  billing_officer: { id: "", name: "", email: "", phone: "", oracleNumber: "", role: "billing_officer", department: "" },
+  certification_officer: { id: "", name: "", email: "", phone: "", oracleNumber: "", role: "certification_officer", department: "" },
 };

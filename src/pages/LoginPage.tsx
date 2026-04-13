@@ -24,21 +24,21 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, user, navigate]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) return;
     setError("");
     setIsSubmitting(true);
-    setTimeout(() => {
-      const result = loginWithCredentials(email.trim(), password);
-      if (result.success) {
-        const savedUser = JSON.parse(localStorage.getItem("lasbca_user") || "null");
-        navigate(savedUser?.role === "certification_officer" ? "/certification" : "/billing");
-      } else {
+    try {
+      const result = await loginWithCredentials(email.trim(), password);
+      if (!result.success) {
         setError(result.error || "Invalid credentials.");
       }
-      setIsSubmitting(false);
-    }, 500);
+      // Navigation happens automatically via useEffect when isAuthenticated changes
+    } catch (err: any) {
+      setError(err.message || "An error occurred.");
+    }
+    setIsSubmitting(false);
   };
 
   return (

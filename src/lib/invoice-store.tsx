@@ -1,67 +1,226 @@
 // ============================================================
-// invoice-store.tsx — Shared invoice state (replaces Supabase)
+// invoice-store.tsx — Supabase-backed invoice state
 // ============================================================
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import type { InvoiceData } from "./types";
-import { SAMPLE_INVOICES } from "./sample-data";
+import { supabase } from "./supabase";
+import { useAuth } from "./auth";
 
 interface InvoiceStoreContextType {
   invoices: InvoiceData[];
+  isLoading: boolean;
   getInvoice: (id: string) => InvoiceData | undefined;
-  addInvoice: (invoice: InvoiceData) => void;
-  updateInvoice: (id: string, updates: Partial<InvoiceData>) => void;
-  deleteInvoice: (id: string) => void;
+  addInvoice: (invoice: InvoiceData) => Promise<void>;
+  updateInvoice: (id: string, updates: Partial<InvoiceData>) => Promise<void>;
+  deleteInvoice: (id: string) => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const InvoiceStoreContext = createContext<InvoiceStoreContextType>({
   invoices: [],
+  isLoading: true,
   getInvoice: () => undefined,
-  addInvoice: () => {},
-  updateInvoice: () => {},
-  deleteInvoice: () => {},
+  addInvoice: async () => {},
+  updateInvoice: async () => {},
+  deleteInvoice: async () => {},
+  refresh: async () => {},
 });
 
+/** Convert DB row to InvoiceData */
+function dbToInvoice(row: any): InvoiceData {
+  return {
+    id: row.id,
+    invoiceNumber: row.invoice_number,
+    referenceNumber: row.reference_number || "",
+    status: row.status,
+    issueDate: row.issue_date,
+    dueDate: row.due_date,
+    clientName: row.client_name || "",
+    clientAddress: row.client_address || "",
+    clientPhone: row.client_phone || "",
+    clientEmail: row.client_email || "",
+    propertyAddress: row.property_address || "",
+    propertyLGA: row.property_lga || "Ikeja",
+    buildingUse: row.building_use || "Commercial",
+    coordinates: row.coordinates || { latitude: 0, longitude: 0 },
+    photos: [], // loaded separately from invoice_photos table
+    certificateType: row.certificate_type || "completion_fitness",
+    certificateTitle: row.certificate_title || "",
+    revenueCode: row.revenue_code || "",
+    agencyCode: row.agency_code || "",
+    lineItems: row.line_items || [],
+    subtotal: Number(row.subtotal) || 0,
+    totalAmount: Number(row.total_amount) || 0,
+    createdBy: row.created_by,
+    approvedBy: row.approved_by,
+    approvedAt: row.approved_at,
+    sentAt: row.sent_at,
+    paidAt: row.paid_at,
+    notes: row.notes,
+    rejectionNote: row.rejection_note,
+    paystackReference: row.payment_reference,
+    paymentLink: row.payment_link,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Convert InvoiceData to DB row */
+function invoiceToDb(inv: InvoiceData) {
+  return {
+    id: inv.id,
+    invoice_number: inv.invoiceNumber,
+    reference_number: inv.referenceNumber,
+    status: inv.status,
+    issue_date: inv.issueDate,
+    due_date: inv.dueDate,
+    client_name: inv.clientName,
+    client_address: inv.clientAddress,
+    client_phone: inv.clientPhone,
+    client_email: inv.clientEmail,
+    property_address: inv.propertyAddress,
+    property_lga: inv.propertyLGA,
+    building_use: inv.buildingUse,
+    coordinates: inv.coordinates,
+    certificate_type: inv.certificateType,
+    certificate_title: inv.certificateTitle,
+    revenue_code: inv.revenueCode,
+    agency_code: inv.agencyCode,
+    line_items: inv.lineItems,
+    subtotal: inv.subtotal,
+    total_amount: inv.totalAmount,
+    created_by: inv.createdBy || undefined,
+    approved_by: inv.approvedBy || undefined,
+    approved_at: inv.approvedAt || undefined,
+    sent_at: inv.sentAt || undefined,
+    paid_at: inv.paidAt || undefined,
+    notes: inv.notes,
+    rejection_note: inv.rejectionNote,
+    payment_reference: inv.paystackReference,
+    payment_link: inv.paymentLink,
+  };
+}
+
 export function InvoiceStoreProvider({ children }: { children: ReactNode }) {
-  const [invoices, setInvoices] = useState<InvoiceData[]>(() => {
-    try {
-      const saved = localStorage.getItem("lasbca_invoices");
-      return saved ? JSON.parse(saved) : SAMPLE_INVOICES;
-    } catch {
-      return SAMPLE_INVOICES;
+  const { isAuthenticated } = useAuth();
+  const [invoices, setInvoices] = useState<InvoiceData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch all invoices
+  const fetchInvoices = useCallback(async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from("invoices")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      setInvoices(data.map(dbToInvoice));
     }
-  });
-
-  const getInvoice = useCallback((id: string) => invoices.find(inv => inv.id === id), [invoices]);
-
-  const addInvoice = useCallback((invoice: InvoiceData) => {
-    setInvoices(prev => {
-      const updated = [invoice, ...prev];
-      localStorage.setItem("lasbca_invoices", JSON.stringify(updated));
-      return updated;
-    });
+    setIsLoading(false);
   }, []);
 
-  const updateInvoice = useCallback((id: string, updates: Partial<InvoiceData>) => {
-    setInvoices(prev => {
-      const updated = prev.map(inv =>
-        inv.id === id ? { ...inv, ...updates, updatedAt: new Date().toISOString() } : inv
-      );
-      localStorage.setItem("lasbca_invoices", JSON.stringify(updated));
-      return updated;
-    });
+  // Load invoices when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchInvoices();
+    } else {
+      setInvoices([]);
+      setIsLoading(false);
+    }
+  }, [isAuthenticated, fetchInvoices]);
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const channel = supabase
+      .channel("invoices-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "invoices" },
+        () => { fetchInvoices(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [isAuthenticated, fetchInvoices]);
+
+  const getInvoice = useCallback(
+    (id: string) => invoices.find(inv => inv.id === id),
+    [invoices]
+  );
+
+  const addInvoice = useCallback(async (invoice: InvoiceData) => {
+    const row = invoiceToDb(invoice);
+    const { error } = await supabase.from("invoices").insert(row);
+    if (error) {
+      console.error("Failed to add invoice:", error);
+      throw error;
+    }
+    // Optimistic update
+    setInvoices(prev => [invoice, ...prev]);
   }, []);
 
-  const deleteInvoice = useCallback((id: string) => {
-    setInvoices(prev => {
-      const updated = prev.filter(inv => inv.id !== id);
-      localStorage.setItem("lasbca_invoices", JSON.stringify(updated));
-      return updated;
-    });
+  const updateInvoice = useCallback(async (id: string, updates: Partial<InvoiceData>) => {
+    // Convert updates to DB format
+    const dbUpdates: Record<string, any> = {};
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.clientName !== undefined) dbUpdates.client_name = updates.clientName;
+    if (updates.clientAddress !== undefined) dbUpdates.client_address = updates.clientAddress;
+    if (updates.clientPhone !== undefined) dbUpdates.client_phone = updates.clientPhone;
+    if (updates.clientEmail !== undefined) dbUpdates.client_email = updates.clientEmail;
+    if (updates.propertyAddress !== undefined) dbUpdates.property_address = updates.propertyAddress;
+    if (updates.propertyLGA !== undefined) dbUpdates.property_lga = updates.propertyLGA;
+    if (updates.buildingUse !== undefined) dbUpdates.building_use = updates.buildingUse;
+    if (updates.coordinates !== undefined) dbUpdates.coordinates = updates.coordinates;
+    if (updates.certificateType !== undefined) dbUpdates.certificate_type = updates.certificateType;
+    if (updates.certificateTitle !== undefined) dbUpdates.certificate_title = updates.certificateTitle;
+    if (updates.revenueCode !== undefined) dbUpdates.revenue_code = updates.revenueCode;
+    if (updates.agencyCode !== undefined) dbUpdates.agency_code = updates.agencyCode;
+    if (updates.lineItems !== undefined) dbUpdates.line_items = updates.lineItems;
+    if (updates.subtotal !== undefined) dbUpdates.subtotal = updates.subtotal;
+    if (updates.totalAmount !== undefined) dbUpdates.total_amount = updates.totalAmount;
+    if (updates.approvedBy !== undefined) dbUpdates.approved_by = updates.approvedBy;
+    if (updates.approvedAt !== undefined) dbUpdates.approved_at = updates.approvedAt;
+    if (updates.sentAt !== undefined) dbUpdates.sent_at = updates.sentAt;
+    if (updates.paidAt !== undefined) dbUpdates.paid_at = updates.paidAt;
+    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+    if (updates.rejectionNote !== undefined) dbUpdates.rejection_note = updates.rejectionNote;
+    if (updates.referenceNumber !== undefined) dbUpdates.reference_number = updates.referenceNumber;
+    if (updates.invoiceNumber !== undefined) dbUpdates.invoice_number = updates.invoiceNumber;
+    if (updates.issueDate !== undefined) dbUpdates.issue_date = updates.issueDate;
+    if (updates.dueDate !== undefined) dbUpdates.due_date = updates.dueDate;
+    if (updates.paystackReference !== undefined) dbUpdates.payment_reference = updates.paystackReference;
+    if (updates.paymentLink !== undefined) dbUpdates.payment_link = updates.paymentLink;
+
+    const { error } = await supabase.from("invoices").update(dbUpdates).eq("id", id);
+    if (error) {
+      console.error("Failed to update invoice:", error);
+      throw error;
+    }
+    // Optimistic update
+    setInvoices(prev =>
+      prev.map(inv => inv.id === id ? { ...inv, ...updates, updatedAt: new Date().toISOString() } : inv)
+    );
+  }, []);
+
+  const deleteInvoice = useCallback(async (id: string) => {
+    const { error } = await supabase.from("invoices").delete().eq("id", id);
+    if (error) {
+      console.error("Failed to delete invoice:", error);
+      throw error;
+    }
+    setInvoices(prev => prev.filter(inv => inv.id !== id));
   }, []);
 
   return (
-    <InvoiceStoreContext.Provider value={{ invoices, getInvoice, addInvoice, updateInvoice, deleteInvoice }}>
+    <InvoiceStoreContext.Provider value={{
+      invoices, isLoading, getInvoice,
+      addInvoice, updateInvoice, deleteInvoice,
+      refresh: fetchInvoices,
+    }}>
       {children}
     </InvoiceStoreContext.Provider>
   );
