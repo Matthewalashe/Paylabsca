@@ -1,8 +1,10 @@
 // ============================================================
 // AppShell.tsx — Refined minimal sidebar layout
 // ============================================================
+// Fixed: Added mobile logout button in top header bar
+// ============================================================
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useNotifications } from "@/lib/notifications";
@@ -37,6 +39,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { unreadCount } = useNotifications();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   if (!user) return <Navigate to="/login" replace />;
 
@@ -45,6 +49,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const accent = isCert ? "#D4AF37" : "#006400";
 
   const handleLogout = () => { logout(); navigate("/"); };
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    if (showUserMenu) {
+      document.addEventListener("mousedown", handler);
+      return () => document.removeEventListener("mousedown", handler);
+    }
+  }, [showUserMenu]);
 
   return (
     <div className="h-screen flex overflow-hidden bg-[#F7F7F8]">
@@ -134,6 +151,40 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500" />
               )}
             </Link>
+
+            {/* ===== MOBILE USER MENU (visible only on mobile) ===== */}
+            <div className="relative lg:hidden" ref={userMenuRef}>
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold transition-all hover:ring-2 hover:ring-offset-1"
+                style={{ background: accent, ...(showUserMenu ? { boxShadow: `0 0 0 2px white, 0 0 0 4px ${accent}` } : {}) }}
+                aria-label="User menu"
+              >
+                {user.avatar || "U"}
+              </button>
+
+              {/* Dropdown */}
+              {showUserMenu && (
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50"
+                     style={{ animation: "scaleIn 0.15s ease-out" }}
+                >
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{user.name}</p>
+                    <p className="text-xs text-gray-400 truncate">{user.email}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{isCert ? "Certification Officer" : "Billing Officer"}</p>
+                  </div>
+                  <div className="p-2">
+                    <button
+                      onClick={() => { setShowUserMenu(false); setShowLogoutConfirm(true); }}
+                      className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-red-600 hover:bg-red-50 transition-colors font-medium"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -155,6 +206,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         confirmText="Sign Out"
         variant="danger"
       />
+
+      {/* Animation keyframes for mobile dropdown */}
+      <style>{`
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }

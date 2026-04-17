@@ -11,19 +11,15 @@ import { useNotifications } from "@/lib/notifications";
 import { toast } from "sonner";
 
 export default function CertSettingsPage() {
-  const { stampUrl, signatureUrl, updateAsset, compressImage } = useCertAssets();
+  const { stampUrl, signatureUrl, uploadAsset, deleteAsset, isLoading } = useCertAssets();
   const { addNotification } = useNotifications();
   
-  const [localStamp, setLocalStamp] = useState<string | null>(stampUrl);
-  const [localSig, setLocalSig] = useState<string | null>(signatureUrl);
   const [isUploading, setIsUploading] = useState<"stamp" | "signature" | null>(null);
   
   const stampInputRef = useRef<HTMLInputElement>(null);
   const sigInputRef = useRef<HTMLInputElement>(null);
-  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
 
   const handleFileUpload = async (type: "stamp" | "signature", file: File) => {
-    // Validate file size (max 10MB raw)
     if (file.size > 10 * 1024 * 1024) {
       toast.error("File too large. Please use an image smaller than 10MB.");
       return;
@@ -31,46 +27,32 @@ export default function CertSettingsPage() {
 
     setIsUploading(type);
     try {
-      // Compress image before setting it (prevents localStorage overflow)
-      const compressed = await compressImage(file, 800, 0.8);
-      if (type === "stamp") setLocalStamp(compressed);
-      else setLocalSig(compressed);
-      toast.success(`${type === "stamp" ? "Stamp" : "Signature"} uploaded successfully!`);
+      await uploadAsset(type, file);
+      toast.success(`${type === "stamp" ? "Stamp" : "Signature"} uploaded and saved successfully!`);
+      
+      addNotification({
+        type: "info",
+        title: "Asset Updated",
+        message: `Official ${type} has been updated.`,
+        targetRole: "certification_officer",
+      });
     } catch (err) {
       console.error("Upload failed:", err);
-      toast.error(`Failed to process ${type}. Please try a different image.`);
+      toast.error(`Failed to upload ${type}.`);
     } finally {
       setIsUploading(null);
-      // Reset file input so user can re-upload same file
       if (type === "stamp" && stampInputRef.current) stampInputRef.current.value = "";
       if (type === "signature" && sigInputRef.current) sigInputRef.current.value = "";
     }
   };
 
-  const handleSave = () => {
+  const handleReset = async (type: "stamp" | "signature") => {
     try {
-      updateAsset("stampUrl", localStamp);
-      updateAsset("signatureUrl", localSig);
-      addNotification({
-        type: "approval",
-        title: "Settings Saved",
-        message: "Official stamp and signature have been updated.",
-        targetRole: "certification_officer",
-      });
-      toast.success("Certification settings saved successfully!");
+      await deleteAsset(type);
+      toast.info(`${type === "stamp" ? "Stamp" : "Signature"} reset to default.`);
     } catch (err) {
-      console.error("Save failed:", err);
-      toast.error("Failed to save settings. Images may be too large.");
+      toast.error(`Failed to reset ${type}.`);
     }
-  };
-
-  const handleReset = (type: "stamp" | "signature") => {
-    if (type === "stamp") {
-      setLocalStamp("/stamp.png");
-    } else {
-      setLocalSig("/signature.png");
-    }
-    toast.info(`${type === "stamp" ? "Stamp" : "Signature"} reset to default.`);
   };
 
   return (
@@ -98,13 +80,13 @@ export default function CertSettingsPage() {
             onChange={(e) => e.target.files?.[0] && handleFileUpload("stamp", e.target.files[0])}
           />
           <div className="mb-4 bg-gray-50 rounded-lg aspect-square flex items-center justify-center border-2 border-dashed border-gray-200 p-4 relative">
-            {isUploading === "stamp" ? (
+            {isUploading === "stamp" || isLoading ? (
               <div className="flex flex-col items-center gap-2 text-gray-400">
                 <Loader2 className="w-8 h-8 animate-spin" />
                 <span className="text-sm">Processing...</span>
               </div>
-            ) : localStamp ? (
-              <img src={localStamp} alt="Stamp preview" className="max-w-full max-h-full object-contain drop-shadow-md mix-blend-multiply" />
+            ) : stampUrl ? (
+              <img src={stampUrl} alt="Stamp preview" className="max-w-full max-h-full object-contain drop-shadow-md mix-blend-multiply" />
             ) : (
               <p className="text-sm text-gray-400">No stamp uploaded</p>
             )}
@@ -133,13 +115,13 @@ export default function CertSettingsPage() {
             onChange={(e) => e.target.files?.[0] && handleFileUpload("signature", e.target.files[0])}
           />
           <div className="mb-4 bg-gray-50 rounded-lg aspect-square flex items-center justify-center border-2 border-dashed border-gray-200 p-4 relative">
-            {isUploading === "signature" ? (
+            {isUploading === "signature" || isLoading ? (
               <div className="flex flex-col items-center gap-2 text-gray-400">
                 <Loader2 className="w-8 h-8 animate-spin" />
                 <span className="text-sm">Processing...</span>
               </div>
-            ) : localSig ? (
-              <img src={localSig} alt="Signature preview" className="max-w-full max-h-full object-contain drop-shadow-sm mix-blend-multiply" />
+            ) : signatureUrl ? (
+              <img src={signatureUrl} alt="Signature preview" className="max-w-full max-h-full object-contain drop-shadow-sm mix-blend-multiply" />
             ) : (
               <p className="text-sm text-gray-400">No signature uploaded</p>
             )}
@@ -157,24 +139,9 @@ export default function CertSettingsPage() {
 
       <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 text-sm text-amber-800 flex items-start gap-3">
         <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <p>These assets will be applied automatically to all approved invoices when you click "Apply Stamp" or "Apply Signature" in the review screen. Images with transparent backgrounds (PNG) are highly recommended.</p>
+        <p>These assets will be applied automatically to all approved invoices when you click "Apply Stamp" or "Apply Signature" in the review screen. Images with transparent backgrounds (PNG) are highly recommended. Assets are saved automatically upon upload.</p>
       </div>
 
-      <div className="flex justify-end pt-4 border-t border-gray-200">
-        <Button size="lg" variant="gold" onClick={() => setShowSaveConfirm(true)}>
-          Save Configuration
-        </Button>
-      </div>
-
-      <ConfirmModal
-        open={showSaveConfirm}
-        onClose={() => setShowSaveConfirm(false)}
-        onConfirm={() => { setShowSaveConfirm(false); handleSave(); }}
-        title="Save Settings?"
-        message="Are you sure you want to save these new certification assets? They will be used for all future approvals."
-        confirmText="Save Settings"
-        variant="success"
-      />
     </div>
   );
 }

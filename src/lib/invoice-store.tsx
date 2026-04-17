@@ -15,6 +15,8 @@ interface InvoiceStoreContextType {
   updateInvoice: (id: string, updates: Partial<InvoiceData>) => Promise<void>;
   deleteInvoice: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
+  uploadPhoto: (invoiceId: string, file: File, position: 1 | 2 | 3 | 4, caption?: string) => Promise<void>;
+  deletePhoto: (photoId: string) => Promise<void>;
 }
 
 const InvoiceStoreContext = createContext<InvoiceStoreContextType>({
@@ -25,6 +27,8 @@ const InvoiceStoreContext = createContext<InvoiceStoreContextType>({
   updateInvoice: async () => {},
   deleteInvoice: async () => {},
   refresh: async () => {},
+  uploadPhoto: async () => {},
+  deletePhoto: async () => {},
 });
 
 /** Convert DB row to InvoiceData */
@@ -110,13 +114,33 @@ export function InvoiceStoreProvider({ children }: { children: ReactNode }) {
   // Fetch all invoices
   const fetchInvoices = useCallback(async () => {
     setIsLoading(true);
+    // Fetch invoices and their photos in parallel, or photo fetch separate?
+    // Let's just fetch all and manually join if needed
     const { data, error } = await supabase
       .from("invoices")
-      .select("*")
+      .select(`
+        *,
+        invoice_photos (
+          id, storage_path, position, caption
+        )
+      `)
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      setInvoices(data.map(dbToInvoice));
+      const mappedInvoices = data.map(row => {
+        const inv = dbToInvoice(row);
+        inv.photos = (row.invoice_photos || []).map((p: any) => {
+          const { data: urlData } = supabase.storage.from("invoice-photos").getPublicUrl(p.storage_path);
+          return {
+            id: p.id,
+            url: `${urlData.publicUrl}?t=${new Date().getTime()}`,
+            position: p.position as any,
+            caption: p.caption || ""
+          };
+        });
+        return inv;
+      });
+      setInvoices(mappedInvoices);
     }
     setIsLoading(false);
   }, []);
@@ -215,11 +239,40 @@ export function InvoiceStoreProvider({ children }: { children: ReactNode }) {
     setInvoices(prev => prev.filter(inv => inv.id !== id));
   }, []);
 
+  const uploadPhoto = useCallback(async (invoiceId: string, file: File, position: 1 | 2 | 3 | 4, caption?: string) => {
+    const filePath = `${invoiceId}/photo-${position}-${Date.now()}`;
+    const { error: uploadError } = await supabase.storage.from("invoice-photos").upload(filePath, file);
+    if (uploadError) throw uploadError;
+
+    const { error: dbError } = await supabase.from("invoice_photos").insert({
+      invoice_id: invoiceId,
+      storage_path: filePath,
+      position,
+      caption
+    });
+    if (dbError) throw dbError;
+    
+    // Refresh to get the new photo injected
+    await fetchInvoices();
+  }, [fetchInvoices]);
+
+  const deletePhoto = useCallback(async (photoId: string) => {
+    // We should first get the path, then delete from storage.
+    const { data } = await supabase.from("invoice_photos").select("storage_path").eq("id", photoId).single();
+    if (data) {
+      await supabase.storage.from("invoice-photos").remove([data.storage_path]);
+    }
+    await supabase.from("invoice_photos").delete().eq("id", photoId);
+    
+    await fetchInvoices();
+  }, [fetchInvoices]);
+
   return (
     <InvoiceStoreContext.Provider value={{
       invoices, isLoading, getInvoice,
       addInvoice, updateInvoice, deleteInvoice,
       refresh: fetchInvoices,
+      uploadPhoto, deletePhoto
     }}>
       {children}
     </InvoiceStoreContext.Provider>

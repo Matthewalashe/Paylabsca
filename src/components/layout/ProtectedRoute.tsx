@@ -11,7 +11,20 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
+
+  // Wait for auth state to resolve before redirecting
+  // This prevents flash-redirects when refreshing an authenticated page
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#F7F7F8]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-gray-200 border-t-[#006400] rounded-full animate-spin" />
+          <p className="text-xs text-gray-400 font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />;

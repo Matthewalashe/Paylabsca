@@ -5,6 +5,8 @@
 // Left: Scrollable form with all invoice fields + file upload
 // Right: Live invoice template preview that updates in real-time
 // ============================================================
+// FIXED: async/await on save/submit, mobile responsive overhaul
+// ============================================================
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -24,7 +26,7 @@ import type { InvoiceData, InvoiceLineItem, LagosLGA, BuildingUseType, Certifica
 import { toast } from "sonner";
 import {
   Save, Send, Eye, EyeOff, Plus, Trash2, MapPin, Camera,
-  Building2, FileText, ArrowLeft, UploadCloud, AlertCircle
+  Building2, FileText, ArrowLeft, UploadCloud, AlertCircle, Loader2
 } from "lucide-react";
 
 const BUILDING_TYPES: BuildingUseType[] = ["Residential", "Commercial", "Industrial", "Mixed-Use", "Institutional"];
@@ -73,7 +75,11 @@ export default function InvoiceEditorPage() {
     return createBlankInvoice();
   });
 
-  const [showPreview, setShowPreview] = useState(true);
+  // Default showPreview to false on mobile (preview panel is hidden anyway)
+  const [showPreview, setShowPreview] = useState(() => {
+    if (typeof window !== "undefined") return window.innerWidth >= 1024;
+    return true;
+  });
   const [photoUrls, setPhotoUrls] = useState<string[]>(() => {
     if (existingInvoice) {
       const urls = ["", "", "", ""];
@@ -87,6 +93,7 @@ export default function InvoiceEditorPage() {
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
+  const [isSaving, setIsSaving] = useState(false);
   
   const fileInputRefs = [
     useRef<HTMLInputElement>(null),
@@ -191,61 +198,83 @@ export default function InvoiceEditorPage() {
     updateField("photos", photos);
   };
 
-  const handleSaveDraft = () => {
-    const code = invoice.clientName.split(/\s+/).slice(0, 3).map(w => w[0] || "").join("").toUpperCase();
-    const referenceNumber = code ? generateReferenceNumber(code) : invoice.referenceNumber;
-    const draft = { ...invoice, referenceNumber, status: "draft" as const, createdBy: user?.id, updatedAt: new Date().toISOString() };
-    
-    if (isEditMode) {
-      updateInvoice(invoice.id, draft);
-      toast.success("Invoice updated and saved as draft.");
-    } else {
-      addInvoice(draft);
-      toast.success("Invoice saved as draft.");
+  // ============================================================
+  // SAVE DRAFT — with proper async/await and error handling
+  // ============================================================
+  const handleSaveDraft = async () => {
+    setIsSaving(true);
+    try {
+      const code = invoice.clientName.split(/\s+/).slice(0, 3).map(w => w[0] || "").join("").toUpperCase();
+      const referenceNumber = code ? generateReferenceNumber(code) : invoice.referenceNumber;
+      const draft = { ...invoice, referenceNumber, status: "draft" as const, createdBy: user?.id, updatedAt: new Date().toISOString() };
+      
+      if (isEditMode) {
+        await updateInvoice(invoice.id, draft);
+        toast.success("Invoice updated and saved as draft.");
+      } else {
+        await addInvoice(draft);
+        toast.success("Invoice saved as draft.");
+      }
+      navigate("/billing");
+    } catch (err: any) {
+      console.error("Failed to save draft:", err);
+      toast.error(err?.message || "Failed to save invoice. Please try again.");
+    } finally {
+      setIsSaving(false);
     }
-    navigate("/billing");
   };
 
-  const handleSubmitForApproval = () => {
-    const defaultCode = invoice.clientName.split(/\s+/).slice(0, 3).map(w => w[0] || "").join("").toUpperCase();
-    const referenceNumber = defaultCode ? generateReferenceNumber(defaultCode) : invoice.referenceNumber;
-    const pendingInvoice = { ...invoice, referenceNumber, status: "pending_approval" as const, createdBy: user?.id, updatedAt: new Date().toISOString() };
-    
-    if (isEditMode) {
-      updateInvoice(invoice.id, pendingInvoice);
-    } else {
-      addInvoice(pendingInvoice);
-    }
-    
-    addNotification({
-      type: "submission",
-      title: "New Invoice Submitted",
-      message: `Invoice ${pendingInvoice.invoiceNumber} submitted for ${pendingInvoice.clientName}.`,
-      invoiceId: pendingInvoice.id,
-      invoiceNumber: pendingInvoice.invoiceNumber,
-      fromUser: user?.name,
-      fromRole: "Billing Officer",
-      targetRole: "certification_officer",
-    });
+  // ============================================================
+  // SUBMIT FOR APPROVAL — with proper async/await and error handling
+  // ============================================================
+  const handleSubmitForApproval = async () => {
+    setIsSaving(true);
+    try {
+      const defaultCode = invoice.clientName.split(/\s+/).slice(0, 3).map(w => w[0] || "").join("").toUpperCase();
+      const referenceNumber = defaultCode ? generateReferenceNumber(defaultCode) : invoice.referenceNumber;
+      const pendingInvoice = { ...invoice, referenceNumber, status: "pending_approval" as const, createdBy: user?.id, updatedAt: new Date().toISOString() };
+      
+      if (isEditMode) {
+        await updateInvoice(invoice.id, pendingInvoice);
+      } else {
+        await addInvoice(pendingInvoice);
+      }
+      
+      addNotification({
+        type: "submission",
+        title: "New Invoice Submitted",
+        message: `Invoice ${pendingInvoice.invoiceNumber} submitted for ${pendingInvoice.clientName}.`,
+        invoiceId: pendingInvoice.id,
+        invoiceNumber: pendingInvoice.invoiceNumber,
+        fromUser: user?.name,
+        fromRole: "Billing Officer",
+        targetRole: "certification_officer",
+      });
 
-    toast.success("Invoice submitted for certification!");
-    navigate("/billing");
+      toast.success("Invoice submitted for certification!");
+      navigate("/billing");
+    } catch (err: any) {
+      console.error("Failed to submit invoice:", err);
+      toast.error(err?.message || "Failed to submit invoice. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <div className="h-[calc(100vh-56px)] flex flex-col overflow-hidden">
       {/* ===== TOP BAR ===== */}
-      <div className="bg-white border-b border-gray-200 px-4 lg:px-6 py-3 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate("/billing")} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-4 lg:px-6 py-3 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <button onClick={() => navigate("/billing")} className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
             <ArrowLeft className="w-4 h-4 text-gray-500" />
           </button>
-          <div>
-            <h1 className="font-bold text-gray-900">{isEditMode ? "Edit Invoice" : "New Invoice"}</h1>
-            <p className="text-xs text-gray-500">{invoice.invoiceNumber}</p>
+          <div className="min-w-0">
+            <h1 className="font-bold text-gray-900 text-sm sm:text-base truncate">{isEditMode ? "Edit Invoice" : "New Invoice"}</h1>
+            <p className="text-[10px] sm:text-xs text-gray-500 truncate">{invoice.invoiceNumber}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           <Button
             variant="ghost"
             size="sm"
@@ -255,8 +284,9 @@ export default function InvoiceEditorPage() {
             {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             {showPreview ? "Hide Preview" : "Show Preview"}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowSaveConfirm(true)}>
-            <Save className="w-4 h-4" /> Save Draft
+          <Button variant="outline" size="sm" onClick={() => setShowSaveConfirm(true)} disabled={isSaving}>
+            <Save className="w-4 h-4" />
+            <span className="hidden sm:inline">Save Draft</span>
           </Button>
           <Button variant="gold" size="sm" onClick={() => {
             const validationErrors = validateInvoice(invoice, photoUrls);
@@ -267,17 +297,19 @@ export default function InvoiceEditorPage() {
             }
             setErrors({});
             setShowSubmitConfirm(true);
-          }}>
-            <Send className="w-4 h-4" /> Submit for Certification
+          }} disabled={isSaving}>
+            <Send className="w-4 h-4" />
+            <span className="hidden sm:inline">Submit for Certification</span>
+            <span className="sm:hidden">Submit</span>
           </Button>
         </div>
       </div>
 
       {/* ===== MAIN SPLIT VIEW ===== */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* LEFT: FORM */}
-        <div className={`${showPreview ? "w-1/2 lg:w-[45%]" : "w-full max-w-3xl mx-auto"} overflow-y-auto border-r border-gray-200 bg-gray-50`}>
-          <div className="p-5 space-y-6">
+        {/* LEFT: FORM — Full width on mobile, split on desktop */}
+        <div className={`${showPreview ? "w-full lg:w-[45%]" : "w-full max-w-3xl mx-auto"} overflow-y-auto border-r border-gray-200 bg-gray-50`}>
+          <div className="p-4 sm:p-5 space-y-5 sm:space-y-6">
             
             {/* Rejection Note Warning */}
             {invoice.status === "rejected" && invoice.rejectionNote && (
@@ -291,7 +323,7 @@ export default function InvoiceEditorPage() {
             )}
 
             {/* --- Section: Client Details --- */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <Building2 className="w-4 h-4 text-[#006400]" />
                 <h3 className="font-bold text-gray-900 text-sm">Client Details</h3>
@@ -315,7 +347,7 @@ export default function InvoiceEditorPage() {
                   />
                   <ErrorMsg error={errors.clientAddress} />
                 </FieldGroup>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <FieldGroup label="Phone">
                     <Input
                       type="tel"
@@ -341,7 +373,7 @@ export default function InvoiceEditorPage() {
             </div>
 
             {/* --- Section: Property Details --- */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <MapPin className="w-4 h-4 text-[#006400]" />
                 <h3 className="font-bold text-gray-900 text-sm">Property Details</h3>
@@ -356,7 +388,7 @@ export default function InvoiceEditorPage() {
                   />
                   <ErrorMsg error={errors.propertyAddress} />
                 </FieldGroup>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <FieldGroup label="Local Government Area">
                     <Select
                       value={invoice.propertyLGA}
@@ -379,7 +411,7 @@ export default function InvoiceEditorPage() {
                     </Select>
                   </FieldGroup>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <FieldGroup label="Longitude">
                     <Input
                       type="number"
@@ -403,7 +435,7 @@ export default function InvoiceEditorPage() {
             </div>
 
             {/* --- Section: Property Photos --- */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <Camera className="w-4 h-4 text-[#006400]" />
                 <h3 className="font-bold text-gray-900 text-sm">Property Photos (4 required)</h3>
@@ -424,7 +456,7 @@ export default function InvoiceEditorPage() {
                         <img src={photoUrls[i]} alt={`Photo ${i+1}`} className="w-full h-full object-cover" />
                         <button
                           onClick={() => handlePhotoRemove(i)}
-                          className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-1 right-1 p-1.5 bg-red-500 text-white rounded-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -432,12 +464,12 @@ export default function InvoiceEditorPage() {
                     ) : (
                       <div 
                         onClick={() => fileInputRefs[i].current?.click()}
-                        className="aspect-[4/3] rounded-lg border-2 border-dashed border-gray-300 hover:border-[#006400] hover:bg-green-50 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors bg-gray-50"
+                        className="aspect-[4/3] rounded-lg border-2 border-dashed border-gray-300 hover:border-[#006400] hover:bg-green-50 flex flex-col items-center justify-center gap-1.5 sm:gap-2 cursor-pointer transition-colors bg-gray-50"
                       >
-                        <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center">
-                          <UploadCloud className="w-4 h-4 text-gray-500" />
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white shadow-sm flex items-center justify-center">
+                          <UploadCloud className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-500" />
                         </div>
-                        <span className="text-xs font-medium text-gray-500">Upload Photo</span>
+                        <span className="text-[10px] sm:text-xs font-medium text-gray-500">Upload</span>
                       </div>
                     )}
                   </div>
@@ -448,7 +480,7 @@ export default function InvoiceEditorPage() {
             </div>
 
             {/* --- Section: Certificate & Codes --- */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <FileText className="w-4 h-4 text-[#006400]" />
                 <h3 className="font-bold text-gray-900 text-sm">Certificate & Revenue Codes</h3>
@@ -464,7 +496,7 @@ export default function InvoiceEditorPage() {
                     ))}
                   </Select>
                 </FieldGroup>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <FieldGroup label="Revenue Code">
                     <Input value={invoice.revenueCode} readOnly className="bg-gray-50 font-mono font-bold" />
                   </FieldGroup>
@@ -472,7 +504,7 @@ export default function InvoiceEditorPage() {
                     <Input value={invoice.agencyCode} readOnly className="bg-gray-50 font-mono font-bold" />
                   </FieldGroup>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <FieldGroup label="Issue Date">
                     <Input
                       type="date"
@@ -492,7 +524,7 @@ export default function InvoiceEditorPage() {
             </div>
 
             {/* --- Section: Line Items --- */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-[#006400]" />
@@ -541,7 +573,7 @@ export default function InvoiceEditorPage() {
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block mb-1">Price/Floor (₦)</label>
+                            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block mb-1">Price (₦)</label>
                             <Input
                               type="number"
                               className="h-9 text-sm"
@@ -566,7 +598,7 @@ export default function InvoiceEditorPage() {
                   <div className="bg-[#003200] rounded-lg p-4 mt-6 text-white">
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-semibold text-green-100">Total Due for Certification</span>
-                      <span className="text-xl lg:text-2xl font-black text-[#D4AF37] truncate ml-4">₦{formatNaira(invoice.totalAmount)}</span>
+                      <span className="text-lg sm:text-xl lg:text-2xl font-black text-[#D4AF37] truncate ml-4">₦{formatNaira(invoice.totalAmount)}</span>
                     </div>
                   </div>
                 </div>
@@ -575,7 +607,7 @@ export default function InvoiceEditorPage() {
             </div>
 
             {/* --- Section: Notes --- */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm mb-6">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-sm mb-6">
               <FieldGroup label="Additional Notes (Internal)">
                 <Textarea
                   placeholder="Add any internal notes or details..."
@@ -585,6 +617,39 @@ export default function InvoiceEditorPage() {
                   className="resize-none"
                 />
               </FieldGroup>
+            </div>
+
+            {/* ===== MOBILE BOTTOM ACTION BAR ===== */}
+            <div className="sm:hidden sticky bottom-0 bg-white border-t border-gray-200 -mx-4 px-4 py-3 flex gap-2 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => setShowSaveConfirm(true)}
+                disabled={isSaving}
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save Draft
+              </Button>
+              <Button
+                variant="gold"
+                size="sm"
+                className="flex-1"
+                onClick={() => {
+                  const validationErrors = validateInvoice(invoice, photoUrls);
+                  if (Object.keys(validationErrors).length > 0) {
+                    setErrors(validationErrors);
+                    toast.error("Please fix validation errors.");
+                    return;
+                  }
+                  setErrors({});
+                  setShowSubmitConfirm(true);
+                }}
+                disabled={isSaving}
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Submit
+              </Button>
             </div>
 
           </div>
@@ -623,6 +688,7 @@ export default function InvoiceEditorPage() {
         message="This invoice will be saved as a draft. You can continue editing it later from your dashboard."
         confirmText="Save Draft"
         variant="default"
+        loading={isSaving}
       />
 
       <ConfirmModal
@@ -633,6 +699,7 @@ export default function InvoiceEditorPage() {
         message={`This invoice (${invoice.invoiceNumber}) for ₦${formatNaira(invoice.totalAmount)} will be sent to the Certification Officer for review. You won't be able to edit it until it's approved or returned.`}
         confirmText="Submit Invoice"
         variant="warning"
+        loading={isSaving}
       />
     </div>
   );

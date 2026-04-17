@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   department TEXT DEFAULT 'Building Certification Department',
   avatar TEXT,
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- 2. INVOICES
@@ -87,7 +88,8 @@ CREATE TABLE IF NOT EXISTS cert_assets (
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
   asset_type TEXT NOT NULL CHECK (asset_type IN ('stamp', 'signature')),
   storage_path TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- 6. AUDIT LOG
@@ -122,9 +124,35 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS set_invoices_updated_at ON invoices;
 CREATE TRIGGER set_invoices_updated_at
   BEFORE UPDATE ON invoices
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS set_profiles_updated_at ON profiles;
+CREATE TRIGGER set_profiles_updated_at
+  BEFORE UPDATE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS set_cert_assets_updated_at ON cert_assets;
+CREATE TRIGGER set_cert_assets_updated_at
+  BEFORE UPDATE ON cert_assets
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- STORAGE BUCKETS
+-- ============================================================
+INSERT INTO storage.buckets (id, name, public) VALUES ('invoice-photos', 'invoice-photos', false) ON CONFLICT DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('cert-assets', 'cert-assets', false) ON CONFLICT DO NOTHING;
+
+-- Storage Policies
+CREATE POLICY "auth_upload_photos" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'invoice-photos');
+CREATE POLICY "auth_read_photos" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'invoice-photos');
+CREATE POLICY "auth_delete_photos" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'invoice-photos');
+
+CREATE POLICY "auth_upload_cert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'cert-assets');
+CREATE POLICY "auth_read_cert" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'cert-assets');
+CREATE POLICY "auth_delete_cert" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'cert-assets');
 
 -- ============================================================
 -- ROW LEVEL SECURITY (RLS)
@@ -148,24 +176,32 @@ CREATE POLICY "profiles_insert_cert" ON profiles FOR INSERT TO authenticated
 -- INVOICES: All authenticated users can read
 CREATE POLICY "invoices_select" ON invoices FOR SELECT TO authenticated USING (true);
 -- Billing officers can insert
-CREATE POLICY "invoices_insert" ON invoices FOR INSERT TO authenticated WITH CHECK (true);
--- Billing officers can update own drafts, cert officers can update any
-CREATE POLICY "invoices_update" ON invoices FOR UPDATE TO authenticated USING (true);
+CREATE POLICY "invoices_insert" ON invoices FOR INSERT TO authenticated 
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'billing_officer'));
+-- Users can update depending on role
+CREATE POLICY "invoices_update" ON invoices FOR UPDATE TO authenticated USING (
+  (created_by = auth.uid() AND status = 'draft') OR 
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'certification_officer')
+);
 -- Only drafts can be deleted by creator
 CREATE POLICY "invoices_delete" ON invoices FOR DELETE TO authenticated
   USING (created_by = auth.uid() AND status = 'draft');
 
 -- INVOICE PHOTOS: Follow invoice access
 CREATE POLICY "photos_select" ON invoice_photos FOR SELECT TO authenticated USING (true);
-CREATE POLICY "photos_insert" ON invoice_photos FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "photos_delete" ON invoice_photos FOR DELETE TO authenticated USING (true);
+CREATE POLICY "photos_insert" ON invoice_photos FOR INSERT TO authenticated 
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'billing_officer'));
+CREATE POLICY "photos_delete" ON invoice_photos FOR DELETE TO authenticated 
+  USING (EXISTS (SELECT 1 FROM invoices WHERE id = invoice_id AND created_by = auth.uid() AND status = 'draft'));
 
 -- NOTIFICATIONS: Users see own notifications
 CREATE POLICY "notif_select" ON notifications FOR SELECT TO authenticated
   USING (target_user_id = auth.uid() OR target_role IN (
     SELECT role FROM profiles WHERE id = auth.uid()
   ) OR target_role = 'all');
-CREATE POLICY "notif_insert" ON notifications FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "notif_insert" ON notifications FOR INSERT TO authenticated WITH CHECK (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid())
+);
 CREATE POLICY "notif_update" ON notifications FOR UPDATE TO authenticated
   USING (target_user_id = auth.uid() OR target_role IN (
     SELECT role FROM profiles WHERE id = auth.uid()
@@ -175,6 +211,7 @@ CREATE POLICY "notif_update" ON notifications FOR UPDATE TO authenticated
 CREATE POLICY "assets_select" ON cert_assets FOR SELECT TO authenticated USING (true);
 CREATE POLICY "assets_insert" ON cert_assets FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
 CREATE POLICY "assets_update" ON cert_assets FOR UPDATE TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "assets_delete" ON cert_assets FOR DELETE TO authenticated USING (user_id = auth.uid());
 
 -- AUDIT LOG: Readable by cert officers, insertable by all
 CREATE POLICY "audit_select" ON audit_log FOR SELECT TO authenticated
@@ -182,10 +219,18 @@ CREATE POLICY "audit_select" ON audit_log FOR SELECT TO authenticated
 CREATE POLICY "audit_insert" ON audit_log FOR INSERT TO authenticated WITH CHECK (true);
 
 -- ============================================================
--- STORAGE BUCKETS (run separately if needed)
+-- SUPABASE REALTIME ENABLEMENT
 -- ============================================================
--- INSERT INTO storage.buckets (id, name, public) VALUES ('invoice-photos', 'invoice-photos', false);
--- INSERT INTO storage.buckets (id, name, public) VALUES ('cert-assets', 'cert-assets', false);
+-- Drop existing publications if they exist to recreate cleanly
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    CREATE PUBLICATION supabase_realtime;
+  END IF;
+END $$;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE invoices;
+ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
 
 -- ============================================================
 -- DONE. Your database is ready.

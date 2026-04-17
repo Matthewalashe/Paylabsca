@@ -94,7 +94,7 @@ export default function CertDashboard() {
       )}
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Link to="/certification/pending" className="group bg-white rounded-xl p-5 border border-gray-100 hover:border-[#D4AF37]/30 transition-colors">
           <Clock className="w-5 h-5 text-[#D4AF37] mb-6" strokeWidth={1.5} />
           <p className="text-gray-900 font-semibold text-[13px]">Pending</p>

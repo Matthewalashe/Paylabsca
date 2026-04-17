@@ -1,36 +1,81 @@
 // ============================================================
-// PaymentPage.tsx — Client-facing Payment Gateway with Credo
+// PaymentPage.tsx — Client-facing LIRS Credo Bill Payment Portal
 // ============================================================
 // Public page: no auth required.
-// Flow: Review invoice → Initialize Credo → Redirect to checkout
-// Credo handles card + bank transfer + USSD payment collection.
+// Flow: Load invoice → Review → Initialize LIRS Credo → Redirect
+// Uses /abc/payment/initialize (LIRS Bill Payment API)
 // ============================================================
 
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useInvoiceStore } from "@/lib/invoice-store";
+import { supabase, callEdgeFunction } from "@/lib/supabase";
 import { formatNaira } from "@/lib/types";
+import type { InvoiceData } from "@/lib/types";
 import InvoiceTemplate from "@/components/invoice/InvoiceTemplate";
 import { QRCodeSVG } from "qrcode.react";
 import {
   CheckCircle, Shield, CreditCard, Lock, Loader2,
-  Download, Building2, Calendar, FileText, ExternalLink,
+  Download, Building2, Calendar, FileText,
   AlertCircle, Copy, CheckCheck,
 } from "lucide-react";
 
 const CREDO_PUBLIC_KEY = import.meta.env.VITE_CREDO_PUBLIC_KEY || "";
+
+// LIRS Credo base URL — keys starting with "1" are live, "0" are demo
 const CREDO_API_BASE = CREDO_PUBLIC_KEY.startsWith("1PUB")
   ? "https://api.credocentral.com"
   : "https://api.credodemo.com";
 
+/** Convert a Supabase DB row into the frontend InvoiceData shape */
+function dbToInvoice(row: any): InvoiceData {
+  return {
+    id: row.id,
+    invoiceNumber: row.invoice_number,
+    referenceNumber: row.reference_number || "",
+    status: row.status,
+    issueDate: row.issue_date,
+    dueDate: row.due_date,
+    clientName: row.client_name || "",
+    clientAddress: row.client_address || "",
+    clientPhone: row.client_phone || "",
+    clientEmail: row.client_email || "",
+    propertyAddress: row.property_address || "",
+    propertyLGA: row.property_lga || "Ikeja",
+    buildingUse: row.building_use || "Commercial",
+    coordinates: row.coordinates || { latitude: 0, longitude: 0 },
+    photos: [],
+    certificateType: row.certificate_type || "completion_fitness",
+    certificateTitle: row.certificate_title || "",
+    revenueCode: row.revenue_code || "",
+    agencyCode: row.agency_code || "",
+    lineItems: row.line_items || [],
+    subtotal: Number(row.subtotal) || 0,
+    totalAmount: Number(row.total_amount) || 0,
+    createdBy: row.created_by,
+    approvedBy: row.approved_by,
+    approvedAt: row.approved_at,
+    sentAt: row.sent_at,
+    paidAt: row.paid_at,
+    notes: row.notes,
+    rejectionNote: row.rejection_note,
+    paystackReference: row.payment_reference,
+    paymentLink: row.payment_link,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export default function PaymentPage() {
   const { invoiceId } = useParams();
   const [searchParams] = useSearchParams();
-  const { invoices, updateInvoice } = useInvoiceStore();
 
-  const invoice = invoices.find(i => i.id === invoiceId);
+  // We load the invoice directly from Supabase so this page works
+  // without the InvoiceStoreProvider (which requires authentication).
+  const [invoice, setInvoice] = useState<InvoiceData | null>(null);
+  const [isLoadingInvoice, setIsLoadingInvoice] = useState(true);
+
   const [step, setStep] = useState<"review" | "processing" | "success" | "error">("review");
   const [isInitializing, setIsInitializing] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -38,25 +83,81 @@ export default function PaymentPage() {
 
   const paymentUrl = `${window.location.origin}/pay/${invoiceId}`;
 
-  // Check if returning from Credo callback
+  // ── Load invoice directly from Supabase (public, no auth) ──
+  useEffect(() => {
+    if (!invoiceId) return;
+
+    async function loadInvoice() {
+      setIsLoadingInvoice(true);
+      try {
+        const { data, error } = await supabase
+          .from("invoices")
+          .select("*")
+          .eq("id", invoiceId)
+          .single();
+
+        if (error || !data) {
+          setInvoice(null);
+        } else {
+          setInvoice(dbToInvoice(data));
+        }
+      } catch {
+        setInvoice(null);
+      } finally {
+        setIsLoadingInvoice(false);
+      }
+    }
+
+    loadInvoice();
+  }, [invoiceId]);
+
+  // ── Check if returning from Credo callback ──
   useEffect(() => {
     const transRef = searchParams.get("transRef");
     if (transRef && invoice && invoice.status !== "paid") {
-      // Returned from Credo — mark as paid (in production, verify server-side)
-      updateInvoice(invoice.id, {
-        status: "paid",
-        paidAt: new Date().toISOString(),
-        paystackReference: transRef,
-      });
-      setStep("success");
-    }
-  }, [searchParams, invoice, updateInvoice]);
+      setIsInitializing(true);
+      setStep("processing");
 
-  // Auto-skip to success if already paid
+      callEdgeFunction("verify-payment", {
+        transRef,
+        invoiceId: invoice.id,
+      })
+        .then((result) => {
+          if (result.success) {
+            setInvoice((prev) => prev ? { ...prev, status: "paid", paidAt: new Date().toISOString(), paystackReference: transRef } : prev);
+            setStep("success");
+          } else {
+            setErrorMsg("Payment verification failed. Please contact support.");
+            setStep("error");
+          }
+        })
+        .catch((err) => {
+          console.error("Verification error:", err);
+          setErrorMsg("Error verifying payment with server.");
+          setStep("error");
+        })
+        .finally(() => {
+          setIsInitializing(false);
+        });
+    }
+  }, [searchParams, invoice]);
+
+  // ── Auto-skip to success if already paid ──
   useEffect(() => {
     if (invoice?.status === "paid") setStep("success");
   }, [invoice?.status]);
 
+  // ── Loading state ──
+  if (isLoadingInvoice) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <Loader2 className="w-10 h-10 text-[#006400] animate-spin mb-4" />
+        <p className="text-gray-500 text-sm">Loading invoice…</p>
+      </div>
+    );
+  }
+
+  // ── Not found ──
   if (!invoice) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
@@ -69,10 +170,9 @@ export default function PaymentPage() {
 
   const isPaid = invoice.status === "paid";
 
-  // Initialize Credo payment (hosted checkout redirect)
+  // ── Initialize LIRS Credo Bill Payment ──
   const handlePayWithCredo = async () => {
-    if (!CREDO_PUBLIC_KEY || CREDO_PUBLIC_KEY === "0PUB_YOUR_SANDBOX_KEY_HERE") {
-      // Fallback: simulate payment for demo
+    if (!CREDO_PUBLIC_KEY || CREDO_PUBLIC_KEY.includes("_YOUR_") || CREDO_PUBLIC_KEY.includes("_your_")) {
       handleSimulatedPayment();
       return;
     }
@@ -81,40 +181,32 @@ export default function PaymentPage() {
     setErrorMsg("");
 
     try {
-      const response = await fetch(`${CREDO_API_BASE}/transaction/initialize`, {
+      // LIRS Bill Payment API — POST /abc/payment/initialize
+      const response = await fetch(`${CREDO_API_BASE}/abc/payment/initialize`, {
         method: "POST",
         headers: {
-          "Authorization": CREDO_PUBLIC_KEY,
+          Authorization: CREDO_PUBLIC_KEY,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          amount: invoice.totalAmount * 100, // Convert to kobo
-          email: invoice.clientEmail || "client@lasbca.lg.gov.ng",
-          currency: "NGN",
-          bearer: 0,
-          channels: ["CARD", "BANK"],
-          initializeAccount: 0,
-          reference: `LASBCA-${invoice.invoiceNumber}-${Date.now()}`,
+          amount: Math.round(invoice.totalAmount * 100), // Convert to kobo
+          emailAddress: invoice.clientEmail || "client@lasbca.lg.gov.ng",
+          phoneNumber: invoice.clientPhone || "",
+          billNumber: invoice.invoiceNumber, // LIRS bill number — we use invoice number
+          initializeAccount: 1,
           callbackUrl: paymentUrl,
-          customerFirstName: invoice.clientName.split(" ")[0],
-          customerLastName: invoice.clientName.split(" ").slice(1).join(" ") || "Client",
-          narration: `LASBCA Invoice ${invoice.invoiceNumber}`,
-          metadata: {
-            customFields: [
-              { variable_name: "invoice_number", value: invoice.invoiceNumber, display_name: "Invoice Number" },
-              { variable_name: "property_address", value: invoice.propertyAddress, display_name: "Property Address" },
-            ],
-          },
         }),
       });
 
       const data = await response.json();
 
       if (data.status === 200 && data.data?.authorizationUrl) {
-        // Redirect to Credo checkout
+        // Redirect user to Credo hosted checkout
         window.location.href = data.data.authorizationUrl;
       } else {
-        throw new Error(data.message || "Failed to initialize payment");
+        throw new Error(
+          data.message || data.data?.message || "Failed to initialize LIRS payment"
+        );
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Payment initialization failed";
@@ -123,20 +215,30 @@ export default function PaymentPage() {
     }
   };
 
-  // Simulated payment for demo (when no Credo key)
-  const handleSimulatedPayment = () => {
+  // ── Simulated payment for demo (when no Credo key) ──
+  const handleSimulatedPayment = async () => {
     setIsInitializing(true);
     setStep("processing");
 
-    setTimeout(() => {
-      updateInvoice(invoice.id, {
-        status: "paid",
-        paidAt: new Date().toISOString(),
-        paystackReference: `CREDO-SIM-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+    const simRef = `CREDO-SIM-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+
+    try {
+      const result = await callEdgeFunction("verify-payment", {
+        transRef: simRef,
+        invoiceId: invoice.id,
       });
+
+      if (result.success) {
+        setInvoice((prev) => prev ? { ...prev, status: "paid", paidAt: new Date().toISOString(), paystackReference: simRef } : prev);
+        setStep("success");
+      }
+    } catch (e) {
+      console.error(e);
+      setErrorMsg("Simulation failed. Server error.");
+      setStep("error");
+    } finally {
       setIsInitializing(false);
-      setStep("success");
-    }, 3000);
+    }
   };
 
   const copyLink = () => {
@@ -145,7 +247,10 @@ export default function PaymentPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const isCredoConfigured = CREDO_PUBLIC_KEY && CREDO_PUBLIC_KEY !== "0PUB_YOUR_SANDBOX_KEY_HERE";
+  const isCredoConfigured =
+    !!CREDO_PUBLIC_KEY &&
+    !CREDO_PUBLIC_KEY.includes("_YOUR_") &&
+    !CREDO_PUBLIC_KEY.includes("_your_");
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
@@ -161,17 +266,17 @@ export default function PaymentPage() {
           </div>
           <div className="flex items-center gap-2 text-gray-400">
             <Lock className="w-4 h-4" />
-            <span className="text-xs font-semibold">256-bit SSL Encrypted</span>
+            <span className="text-xs font-semibold hidden sm:inline">256-bit SSL Encrypted</span>
           </div>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 lg:px-6 py-8">
-        <div className="grid lg:grid-cols-5 gap-8">
+      <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 sm:py-8">
+        <div className="grid lg:grid-cols-5 gap-6 lg:gap-8">
           {/* Left Column: Payment Steps */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Invoice Summary Card (always visible) */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+          <div className="lg:col-span-2 space-y-5">
+            {/* Invoice Summary Card */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <FileText className="w-5 h-5 text-[#006400]" />
                 <h2 className="text-lg font-bold text-gray-900">Invoice Summary</h2>
@@ -207,7 +312,7 @@ export default function PaymentPage() {
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <div className="flex items-end justify-between">
                   <p className="text-gray-500 text-sm font-medium">Total Due</p>
-                  <p className="text-3xl font-black text-[#006400]">₦{formatNaira(invoice.totalAmount)}</p>
+                  <p className="text-2xl sm:text-3xl font-black text-[#006400]">₦{formatNaira(invoice.totalAmount)}</p>
                 </div>
               </div>
             </div>
@@ -229,13 +334,13 @@ export default function PaymentPage() {
                 {/* Pay with Credo Button */}
                 <Button
                   size="xl"
-                  className="w-full text-lg shadow-lg bg-[#006400] hover:bg-[#005000]"
+                  className="w-full text-base sm:text-lg shadow-lg bg-[#006400] hover:bg-[#005000]"
                   onClick={handlePayWithCredo}
                   disabled={isInitializing}
                 >
                   {isInitializing ? (
                     <span className="flex items-center gap-2">
-                      <Loader2 className="w-5 h-5 animate-spin" /> Connecting to Credo...
+                      <Loader2 className="w-5 h-5 animate-spin" /> Connecting to LIRS Payment…
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
@@ -247,15 +352,15 @@ export default function PaymentPage() {
                 {/* Credo branding */}
                 <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
                   <Shield className="w-3.5 h-3.5" />
-                  <span>Secured by <strong className="text-gray-600">Credo</strong> by eTranzact</span>
+                  <span>LIRS Approved — Secured by <strong className="text-gray-600">Credo</strong> by eTranzact</span>
                 </div>
 
                 {/* Payment methods accepted */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Accepted Payment Methods</p>
-                  <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                     {["Visa", "Mastercard", "Verve", "Bank Transfer", "USSD"].map(m => (
-                      <span key={m} className="px-3 py-1.5 bg-gray-50 rounded-lg text-xs font-semibold text-gray-600 border border-gray-100">
+                      <span key={m} className="px-2.5 sm:px-3 py-1.5 bg-gray-50 rounded-lg text-xs font-semibold text-gray-600 border border-gray-100">
                         {m}
                       </span>
                     ))}
@@ -290,34 +395,48 @@ export default function PaymentPage() {
               </div>
             )}
 
-            {/* Step: Processing (simulated) */}
+            {/* Step: Processing */}
             {step === "processing" && (
-              <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm text-center">
+              <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8 shadow-sm text-center">
                 <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 mb-2">Processing Payment</h2>
-                <p className="text-gray-500 text-sm">Please wait while we confirm your payment...</p>
+                <p className="text-gray-500 text-sm">Please wait while we confirm your payment…</p>
                 <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-400">
                   <Shield className="w-3.5 h-3.5" />
-                  <span>Secured by Credo by eTranzact</span>
+                  <span>LIRS Approved — Secured by Credo</span>
                 </div>
+              </div>
+            )}
+
+            {/* Step: Error */}
+            {step === "error" && (
+              <div className="bg-white rounded-2xl border-2 border-red-200 p-6 sm:p-8 shadow-sm text-center">
+                <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-8 h-8 text-red-500" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Payment Issue</h2>
+                <p className="text-gray-500 text-sm mb-4">{errorMsg || "An error occurred during payment verification."}</p>
+                <Button variant="outline" onClick={() => { setStep("review"); setErrorMsg(""); }}>
+                  Try Again
+                </Button>
               </div>
             )}
 
             {/* Step: Success */}
             {step === "success" && (
-              <div className="bg-white rounded-2xl border-2 border-green-200 p-8 shadow-sm text-center">
+              <div className="bg-white rounded-2xl border-2 border-green-200 p-6 sm:p-8 shadow-sm text-center">
                 <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CheckCircle className="w-10 h-10 text-green-600" />
                 </div>
                 <h2 className="text-2xl font-black text-gray-900 mb-2">Payment Successful!</h2>
                 <p className="text-gray-500 mb-6 text-sm">Your payment has been received. The invoice is now fully settled.</p>
-                
+
                 <div className="bg-gray-50 rounded-xl p-4 mb-6 text-left border border-gray-100 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Transaction Ref</span>
-                    <span className="font-mono text-xs font-bold text-gray-900">{invoice.paystackReference}</span>
+                    <span className="font-mono text-xs font-bold text-gray-900 break-all text-right max-w-[180px]">{invoice.paystackReference}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Amount Paid</span>
@@ -341,7 +460,7 @@ export default function PaymentPage() {
           </div>
 
           {/* Right Column: Invoice Preview */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-3 hidden sm:block">
             <div className="bg-gray-200 p-4 rounded-2xl flex justify-center overflow-hidden border border-gray-300">
               <div className="bg-white shadow-lg transform scale-[0.55] lg:scale-[0.7] origin-top">
                 <InvoiceTemplate
@@ -358,7 +477,7 @@ export default function PaymentPage() {
       </div>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-16">
+      <footer className="bg-white border-t border-gray-200 mt-12 sm:mt-16">
         <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img src="/lasbca-logo.png" alt="" className="w-8 h-8 rounded-full opacity-60" />
@@ -368,7 +487,7 @@ export default function PaymentPage() {
             </div>
           </div>
           <div className="flex items-center gap-4 text-xs text-gray-400">
-            <span className="flex items-center gap-1"><Shield className="w-3 h-3" /> Powered by Credo / eTranzact</span>
+            <span className="flex items-center gap-1"><Shield className="w-3 h-3" /> LIRS Approved — Powered by Credo</span>
             <span>© {new Date().getFullYear()} Lagos State Government</span>
           </div>
         </div>
