@@ -11,7 +11,7 @@ import { useNotifications } from "@/lib/notifications";
 import ConfirmModal from "@/components/ui/confirm-modal";
 import {
   LayoutDashboard, FileText, Plus, BookOpen, Settings, Menu, X, LogOut,
-  Bell, Shield, Users, ClipboardCheck, CheckCircle,
+  Bell, Shield, Users, ClipboardCheck, CheckCircle, BarChart3,
 } from "lucide-react";
 
 const BILLING_NAV = [
@@ -26,6 +26,7 @@ const CERT_NAV = [
   { path: "/certification", label: "Dashboard", icon: LayoutDashboard },
   { path: "/certification/pending", label: "Pending", icon: ClipboardCheck },
   { path: "/certification/approved", label: "Approved", icon: CheckCircle },
+  { path: "/certification/financials", label: "Financials", icon: BarChart3 },
   { path: "/invoices", label: "All Invoices", icon: FileText },
   { path: "/certification/users", label: "Users", icon: Users },
   { path: "/certification/settings", label: "Settings", icon: Settings },

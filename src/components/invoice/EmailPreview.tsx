@@ -43,8 +43,8 @@ export default function EmailPreview({ invoice, onSend, onCancel }: EmailPreview
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white max-w-2xl w-full rounded-2xl shadow-2xl flex flex-col max-h-full">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4">
+      <div className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
@@ -145,8 +145,8 @@ export default function EmailPreview({ invoice, onSend, onCancel }: EmailPreview
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between rounded-b-2xl">
-          <div className="flex items-center gap-2">
+        <div className="px-4 sm:px-6 py-4 border-t border-gray-100 bg-gray-50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-b-2xl">
+          <div className="flex items-center gap-2 justify-center sm:justify-start">
             {isEmailConfigured() && (
               <div className="flex items-center gap-1 text-green-600">
                 <CheckCircle className="w-3.5 h-3.5" />
@@ -154,13 +154,13 @@ export default function EmailPreview({ invoice, onSend, onCancel }: EmailPreview
               </div>
             )}
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" onClick={onCancel} disabled={isSending}>Cancel</Button>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Button variant="ghost" onClick={onCancel} disabled={isSending} className="flex-1 sm:flex-none">Cancel</Button>
             <Button 
               variant="default" 
               onClick={handleSend} 
               disabled={isSending || !invoice.clientEmail} 
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-blue-600 hover:bg-blue-700 flex-1 sm:flex-none"
             >
               {isSending ? (
                 <span className="flex items-center gap-2">

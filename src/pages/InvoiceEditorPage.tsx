@@ -26,8 +26,9 @@ import type { InvoiceData, InvoiceLineItem, LagosLGA, BuildingUseType, Certifica
 import { toast } from "sonner";
 import {
   Save, Send, Eye, EyeOff, Plus, Trash2, MapPin, Camera,
-  Building2, FileText, ArrowLeft, UploadCloud, AlertCircle, Loader2
+  Building2, FileText, ArrowLeft, UploadCloud, AlertCircle, Loader2, CheckCircle2
 } from "lucide-react";
+import { geocodeAddress } from "@/lib/geocode";
 
 const BUILDING_TYPES: BuildingUseType[] = ["Residential", "Commercial", "Industrial", "Mixed-Use", "Institutional"];
 
@@ -62,7 +63,7 @@ const ErrorMsg = ({ error }: { error?: string }) => {
 export default function InvoiceEditorPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const { addInvoice, updateInvoice, getInvoice } = useInvoiceStore();
+  const { addInvoice, updateInvoice, getInvoice, uploadPhoto } = useInvoiceStore();
   const { user } = useAuth();
   const { addNotification } = useNotifications();
 
@@ -94,6 +95,10 @@ export default function InvoiceEditorPage() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [geocodeStatus, setGeocodeStatus] = useState<"idle" | "found" | "not_found">("idle");
+  // Track actual File objects for upload to Supabase storage
+  const [pendingFiles, setPendingFiles] = useState<(File | null)[]>([null, null, null, null]);
   
   const fileInputRefs = [
     useRef<HTMLInputElement>(null),
@@ -130,6 +135,33 @@ export default function InvoiceEditorPage() {
       ...prev,
       clientName: name,
     }));
+  };
+
+  // Auto-geocode property address on blur
+  const handlePropertyAddressBlur = async () => {
+    const address = invoice.propertyAddress;
+    if (!address || address.trim().length < 5) return;
+    // Don't re-geocode if coordinates already set manually
+    if (invoice.coordinates.latitude !== 0 && invoice.coordinates.longitude !== 0 && geocodeStatus === "found") return;
+
+    setIsGeocoding(true);
+    setGeocodeStatus("idle");
+    try {
+      const result = await geocodeAddress(address);
+      if (result) {
+        updateField("coordinates", {
+          latitude: result.latitude,
+          longitude: result.longitude,
+        });
+        setGeocodeStatus("found");
+      } else {
+        setGeocodeStatus("not_found");
+      }
+    } catch {
+      setGeocodeStatus("not_found");
+    } finally {
+      setIsGeocoding(false);
+    }
   };
 
   // Line items
@@ -179,6 +211,11 @@ export default function InvoiceEditorPage() {
     newUrls[index] = objectUrl;
     setPhotoUrls(newUrls);
 
+    // Store the actual file for later upload to Supabase
+    const newPending = [...pendingFiles];
+    newPending[index] = file;
+    setPendingFiles(newPending);
+
     const photos = newUrls
       .map((u, i) => u ? { id: `photo-${i}`, url: u, position: (i + 1) as 1 | 2 | 3 | 4 } : null)
       .filter(Boolean) as InvoiceData["photos"];
@@ -191,11 +228,30 @@ export default function InvoiceEditorPage() {
     newUrls[index] = "";
     setPhotoUrls(newUrls);
 
+    // Clear the pending file
+    const newPending = [...pendingFiles];
+    newPending[index] = null;
+    setPendingFiles(newPending);
+
     const photos = newUrls
       .map((u, i) => u ? { id: `photo-${i}`, url: u, position: (i + 1) as 1 | 2 | 3 | 4 } : null)
       .filter(Boolean) as InvoiceData["photos"];
     
     updateField("photos", photos);
+  };
+
+  // Helper: upload pending photo files to Supabase storage
+  const uploadPendingPhotos = async (invoiceId: string) => {
+    for (let i = 0; i < pendingFiles.length; i++) {
+      const file = pendingFiles[i];
+      if (file) {
+        try {
+          await uploadPhoto(invoiceId, file, (i + 1) as 1 | 2 | 3 | 4);
+        } catch (err) {
+          console.error(`Failed to upload photo ${i + 1}:`, err);
+        }
+      }
+    }
   };
 
   // ============================================================
@@ -206,15 +262,19 @@ export default function InvoiceEditorPage() {
     try {
       const code = invoice.clientName.split(/\s+/).slice(0, 3).map(w => w[0] || "").join("").toUpperCase();
       const referenceNumber = code ? generateReferenceNumber(code) : invoice.referenceNumber;
-      const draft = { ...invoice, referenceNumber, status: "draft" as const, createdBy: user?.id, updatedAt: new Date().toISOString() };
+      // Strip local blob: photo URLs before saving to DB — real URLs come from Supabase storage
+      const draft = { ...invoice, photos: [], referenceNumber, status: "draft" as const, createdBy: user?.id, updatedAt: new Date().toISOString() };
       
       if (isEditMode) {
         await updateInvoice(invoice.id, draft);
-        toast.success("Invoice updated and saved as draft.");
       } else {
         await addInvoice(draft);
-        toast.success("Invoice saved as draft.");
       }
+
+      // Upload photo files to Supabase storage
+      await uploadPendingPhotos(invoice.id);
+
+      toast.success(isEditMode ? "Invoice updated and saved as draft." : "Invoice saved as draft.");
       navigate("/billing");
     } catch (err: any) {
       console.error("Failed to save draft:", err);
@@ -232,13 +292,17 @@ export default function InvoiceEditorPage() {
     try {
       const defaultCode = invoice.clientName.split(/\s+/).slice(0, 3).map(w => w[0] || "").join("").toUpperCase();
       const referenceNumber = defaultCode ? generateReferenceNumber(defaultCode) : invoice.referenceNumber;
-      const pendingInvoice = { ...invoice, referenceNumber, status: "pending_approval" as const, createdBy: user?.id, updatedAt: new Date().toISOString() };
+      // Strip local blob: photo URLs before saving to DB — real URLs come from Supabase storage
+      const pendingInvoice = { ...invoice, photos: [], referenceNumber, status: "pending_approval" as const, createdBy: user?.id, updatedAt: new Date().toISOString() };
       
       if (isEditMode) {
         await updateInvoice(invoice.id, pendingInvoice);
       } else {
         await addInvoice(pendingInvoice);
       }
+
+      // Upload photo files to Supabase storage
+      await uploadPendingPhotos(invoice.id);
       
       addNotification({
         type: "submission",
@@ -383,7 +447,8 @@ export default function InvoiceEditorPage() {
                   <Input
                     placeholder="e.g. 1, Simbiat Abiola Way, Ikeja"
                     value={invoice.propertyAddress}
-                    onChange={(e) => updateField("propertyAddress", e.target.value)}
+                    onChange={(e) => { updateField("propertyAddress", e.target.value); setGeocodeStatus("idle"); }}
+                    onBlur={handlePropertyAddressBlur}
                     className={errors.propertyAddress ? "border-red-500" : ""}
                   />
                   <ErrorMsg error={errors.propertyAddress} />
@@ -416,21 +481,40 @@ export default function InvoiceEditorPage() {
                     <Input
                       type="number"
                       step="any"
-                      placeholder="6.5958..."
+                      placeholder="3.3387..."
                       value={invoice.coordinates.longitude === 0 ? "" : invoice.coordinates.longitude}
-                      onChange={(e) => updateField("coordinates", { ...invoice.coordinates, longitude: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => { updateField("coordinates", { ...invoice.coordinates, longitude: parseFloat(e.target.value) || 0 }); setGeocodeStatus("idle"); }}
                     />
                   </FieldGroup>
                   <FieldGroup label="Latitude">
                     <Input
                       type="number"
                       step="any"
-                      placeholder="3.3387..."
+                      placeholder="6.5958..."
                       value={invoice.coordinates.latitude === 0 ? "" : invoice.coordinates.latitude}
-                      onChange={(e) => updateField("coordinates", { ...invoice.coordinates, latitude: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => { updateField("coordinates", { ...invoice.coordinates, latitude: parseFloat(e.target.value) || 0 }); setGeocodeStatus("idle"); }}
                     />
                   </FieldGroup>
                 </div>
+                {/* Geocode status feedback */}
+                {isGeocoding && (
+                  <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span className="font-medium">Detecting coordinates from address...</span>
+                  </div>
+                )}
+                {!isGeocoding && geocodeStatus === "found" && (
+                  <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span className="font-medium">📍 Coordinates auto-detected from address</span>
+                  </div>
+                )}
+                {!isGeocoding && geocodeStatus === "not_found" && (
+                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span className="font-medium">Could not detect coordinates — please enter manually</span>
+                  </div>
+                )}
               </div>
             </div>
 

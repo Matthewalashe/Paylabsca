@@ -18,7 +18,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   CheckCircle, Shield, CreditCard, Lock, Loader2,
   Download, Building2, Calendar, FileText,
-  AlertCircle, Copy, CheckCheck,
+  AlertCircle, Copy, CheckCheck, Phone, HelpCircle, MapPin, MessageCircle,
 } from "lucide-react";
 
 const CREDO_PUBLIC_KEY = import.meta.env.VITE_CREDO_PUBLIC_KEY || "";
@@ -476,8 +476,79 @@ export default function PaymentPage() {
         </div>
       </div>
 
+      {/* ===== CONTACT US / NEED HELP ===== */}
+      <div className="max-w-6xl mx-auto px-4 lg:px-6 mt-8 sm:mt-12">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-gradient-to-r from-[#006400] to-[#008000] px-5 sm:px-6 py-4">
+            <div className="flex items-center gap-2.5">
+              <HelpCircle className="w-5 h-5 text-white/80" />
+              <h3 className="text-white font-bold text-base">Need Help?</h3>
+            </div>
+            <p className="text-green-100 text-xs sm:text-sm mt-1">
+              If you have any questions, disputes, or need clarification about this invoice, please contact us.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 p-5 sm:p-6">
+            {/* Phone */}
+            <a
+              href="tel:+2349024287655"
+              className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors group"
+            >
+              <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0 group-hover:bg-green-100 transition-colors">
+                <Phone className="w-4.5 h-4.5 text-[#006400]" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Call Us</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">+234 902 428 7655</p>
+              </div>
+            </a>
+
+            {/* WhatsApp */}
+            <a
+              href="https://api.whatsapp.com/send?phone=2349024287655&text=Hello%2C%20I%20need%20help%20with%20my%20LASBCA%20invoice%20payment."
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors group"
+            >
+              <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0 group-hover:bg-green-100 transition-colors">
+                <MessageCircle className="w-4.5 h-4.5 text-[#25D366]" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">WhatsApp</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">Chat with us</p>
+              </div>
+            </a>
+
+            {/* Email */}
+            <a
+              href="mailto:info@lasbca.lg.gov.ng"
+              className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors group"
+            >
+              <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 transition-colors">
+                <FileText className="w-4.5 h-4.5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Email</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">info@lasbca.lg.gov.ng</p>
+              </div>
+            </a>
+
+            {/* Office */}
+            <div className="flex items-start gap-3 p-3 rounded-xl">
+              <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                <MapPin className="w-4.5 h-4.5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Head Office</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5 leading-snug">Block C, The Secretariat, Alausa, Ikeja, Lagos</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-12 sm:mt-16">
+      <footer className="bg-white border-t border-gray-200 mt-8 sm:mt-12">
         <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img src="/lasbca-logo.png" alt="" className="w-8 h-8 rounded-full opacity-60" />

@@ -17,8 +17,9 @@ import EmailPreview from "./EmailPreview";
 import { toast } from "sonner";
 import {
   FileText, CheckCircle, Send, Download, Mail,
-  ArrowRight, ArrowLeft, XCircle, Clock, Shield,
+  ArrowRight, ArrowLeft, XCircle, Clock, Shield, MessageCircle,
 } from "lucide-react";
+import { sendViaWhatsApp } from "@/lib/whatsapp-service";
 
 interface InvoiceWorkflowProps {
   invoice: InvoiceData;
@@ -214,11 +215,11 @@ export default function InvoiceWorkflow({ invoice, onUpdateInvoice }: InvoiceWor
               </div>
             </div>
             <div className="flex gap-2 w-full sm:w-auto">
-              <button onClick={() => setShowEmailPreview(true)} className="flex gap-2 items-center px-4 py-2 bg-white border border-green-300 text-green-700 rounded-lg shadow-sm font-medium hover:bg-green-100 flex-1 sm:flex-none justify-center text-sm">
+              <button onClick={() => setShowEmailPreview(true)} className="flex gap-2 items-center px-4 py-2.5 bg-white border border-green-300 text-green-700 rounded-lg shadow-sm font-medium hover:bg-green-100 flex-1 sm:flex-none justify-center text-sm">
                 <Mail className="w-4 h-4" /> Email
               </button>
-              <button onClick={() => setShowEmailPreview(true)} className="flex gap-2 items-center px-5 sm:px-6 py-2 bg-[#006400] text-white rounded-lg shadow-sm font-bold hover:bg-[#004d00] flex-1 sm:flex-none justify-center text-sm">
-                <Send className="w-4 h-4" /> Send Invoice
+              <button onClick={() => { sendViaWhatsApp(invoice); toast.success("Opening WhatsApp..."); }} className="flex gap-2 items-center px-4 py-2.5 bg-[#25D366] text-white rounded-lg shadow-sm font-bold hover:bg-[#1da851] flex-1 sm:flex-none justify-center text-sm">
+                <MessageCircle className="w-4 h-4" /> WhatsApp
               </button>
             </div>
           </div>
@@ -226,15 +227,17 @@ export default function InvoiceWorkflow({ invoice, onUpdateInvoice }: InvoiceWor
       )}
 
       {/* ===== INVOICE PREVIEW ===== */}
-      <div className="flex justify-center w-full overflow-x-auto pb-10">
-        <div className="shadow-2xl transform lg:scale-[0.85] scale-[0.5] origin-top">
-          <InvoiceTemplate
-            invoice={invoice}
-            showStamp={["approved", "sent", "paid"].includes(invoice.status)}
-            showSignature={["approved", "sent", "paid"].includes(invoice.status)}
-            showQRCode={["approved", "sent", "paid"].includes(invoice.status)}
-            showPayButton={["sent", "paid"].includes(invoice.status)}
-          />
+      <div className="w-full overflow-x-auto pb-10 no-print">
+        <div className="flex justify-center min-w-0">
+          <div className="shadow-2xl origin-top w-full max-w-[800px] lg:max-w-none lg:w-auto lg:transform lg:scale-[0.85]">
+            <InvoiceTemplate
+              invoice={invoice}
+              showStamp={["approved", "sent", "paid"].includes(invoice.status)}
+              showSignature={["approved", "sent", "paid"].includes(invoice.status)}
+              showQRCode={["approved", "sent", "paid"].includes(invoice.status)}
+              showPayButton={["sent", "paid"].includes(invoice.status)}
+            />
+          </div>
         </div>
       </div>
 

@@ -107,16 +107,15 @@ function invoiceToDb(inv: InvoiceData) {
 }
 
 export function InvoiceStoreProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [invoices, setInvoices] = useState<InvoiceData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch all invoices
+  // Fetch invoices — billing officers see only their own, cert officers see all
   const fetchInvoices = useCallback(async () => {
     setIsLoading(true);
-    // Fetch invoices and their photos in parallel, or photo fetch separate?
-    // Let's just fetch all and manually join if needed
-    const { data, error } = await supabase
+
+    let query = supabase
       .from("invoices")
       .select(`
         *,
@@ -125,6 +124,18 @@ export function InvoiceStoreProvider({ children }: { children: ReactNode }) {
         )
       `)
       .order("created_at", { ascending: false });
+
+    // Dashboard isolation: billing officers only see their own invoices
+    if (user?.role === "billing_officer" && user?.id) {
+      query = query.eq("created_by", user.id);
+    }
+
+    // Certification officers should never see draft invoices
+    if (user?.role === "certification_officer") {
+      query = query.neq("status", "draft");
+    }
+
+    const { data, error } = await query;
 
     if (!error && data) {
       const mappedInvoices = data.map(row => {
@@ -143,7 +154,7 @@ export function InvoiceStoreProvider({ children }: { children: ReactNode }) {
       setInvoices(mappedInvoices);
     }
     setIsLoading(false);
-  }, []);
+  }, [user?.id, user?.role]);
 
   // Load invoices when authenticated
   useEffect(() => {

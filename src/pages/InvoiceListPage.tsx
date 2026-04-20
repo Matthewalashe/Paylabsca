@@ -124,31 +124,29 @@ export default function InvoiceListPage() {
           filteredInvoices.map(inv => (
             <div
               key={inv.id}
-              className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-green-200 transition-all duration-200 flex items-center gap-4 group"
+              className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 hover:shadow-md hover:border-green-200 transition-all duration-200 group"
             >
-              <Link to={`/invoices/${inv.id}`} className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
-                <FileText className="w-5 h-5 text-[#006400]" />
-              </Link>
-              <Link to={`/invoices/${inv.id}`} className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="font-mono text-xs font-bold text-gray-900">{inv.invoiceNumber}</span>
-                  {statusBadge(inv.status)}
+              <Link to={`/invoices/${inv.id}`} className="flex items-center gap-3 sm:gap-4">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-[#006400]" />
                 </div>
-                <p className="text-sm font-medium text-gray-700 truncate">{inv.clientName}</p>
-                <p className="text-xs text-gray-500 truncate">{inv.propertyAddress}</p>
-              </Link>
-              <div className="text-right flex-shrink-0 mr-4 cursor-default">
-                <p className="font-bold text-gray-900">₦{formatNaira(inv.totalAmount)}</p>
-                <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5 justify-end">
-                  <Calendar className="w-3 h-3" />
-                  {new Date(inv.issueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                    <span className="font-mono text-[10px] sm:text-xs font-bold text-gray-900">{inv.invoiceNumber}</span>
+                    {statusBadge(inv.status)}
+                  </div>
+                  <p className="text-xs sm:text-sm font-medium text-gray-700 truncate">{inv.clientName}</p>
+                  <p className="text-[10px] sm:text-xs text-gray-500 truncate hidden sm:block">{inv.propertyAddress}</p>
                 </div>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Link to={`/invoices/${inv.id}`} className="p-2 text-gray-400 hover:text-[#006400] hover:bg-green-50 rounded-lg transition-colors">
-                  <Eye className="w-4 h-4" />
-                </Link>
+                <div className="text-right flex-shrink-0">
+                  <p className="font-bold text-gray-900 text-xs sm:text-base">₦{formatNaira(inv.totalAmount)}</p>
+                  <div className="flex items-center gap-1 text-[10px] sm:text-xs text-gray-500 mt-0.5 justify-end">
+                    <Calendar className="w-3 h-3" />
+                    {new Date(inv.issueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                  </div>
+                </div>
+              </Link>
+              <div className="flex items-center gap-2 mt-2 sm:mt-0 sm:absolute sm:right-4 sm:top-1/2 sm:-translate-y-1/2">
                 {/* Only allow deletion of drafts by billing officers */}
                 {user?.role === "billing_officer" && inv.status === "draft" && (
                   <button 

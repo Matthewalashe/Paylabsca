@@ -94,7 +94,7 @@ export default function CertDashboard() {
       )}
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Link to="/certification/pending" className="group bg-white rounded-xl p-5 border border-gray-100 hover:border-[#D4AF37]/30 transition-colors">
           <Clock className="w-5 h-5 text-[#D4AF37] mb-6" strokeWidth={1.5} />
           <p className="text-gray-900 font-semibold text-[13px]">Pending</p>
@@ -104,6 +104,11 @@ export default function CertDashboard() {
           <CheckCircle className="w-5 h-5 text-green-500 mb-6" strokeWidth={1.5} />
           <p className="text-gray-900 font-semibold text-[13px]">Approved</p>
           <p className="text-[11px] text-gray-400">{approved.length} total</p>
+        </Link>
+        <Link to="/certification/financials" className="group bg-white rounded-xl p-5 border border-gray-100 hover:border-[#006400]/30 transition-colors">
+          <BarChart3 className="w-5 h-5 text-[#006400] mb-6" strokeWidth={1.5} />
+          <p className="text-gray-900 font-semibold text-[13px]">Financials</p>
+          <p className="text-[11px] text-gray-400">₦{formatNaira(totalRevenue)} collected</p>
         </Link>
         <Link to="/certification/users" className="group bg-white rounded-xl p-5 border border-gray-100 hover:border-gray-200 transition-colors">
           <Users className="w-5 h-5 text-gray-400 mb-6" strokeWidth={1.5} />

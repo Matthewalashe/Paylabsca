@@ -19,6 +19,7 @@ import UserManagementPage from "@/pages/certification/UserManagementPage";
 import PendingReviewPage from "@/pages/certification/PendingReviewPage";
 import ApprovedInvoicesPage from "@/pages/certification/ApprovedInvoicesPage";
 import CertSettingsPage from "@/pages/certification/CertSettingsPage";
+import FinancialRecordsPage from "@/pages/certification/FinancialRecordsPage";
 import PaymentPage from "@/pages/PaymentPage";
 
 // Context Providers
@@ -76,6 +77,11 @@ export default function App() {
               <Route path="/certification/settings" element={
                 <ProtectedRoute allowedRoles={["certification_officer"]}>
                   <AppShell><CertSettingsPage /></AppShell>
+                </ProtectedRoute>
+              } />
+              <Route path="/certification/financials" element={
+                <ProtectedRoute allowedRoles={["certification_officer"]}>
+                  <AppShell><FinancialRecordsPage /></AppShell>
                 </ProtectedRoute>
               } />
 
