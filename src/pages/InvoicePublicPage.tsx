@@ -1,11 +1,8 @@
 // ============================================================
-// InvoicePublicPage.tsx — Public invoice view & download page
+// InvoicePublicPage.tsx — Clean public invoice view & download
 // ============================================================
-// Accessed via /invoice/:invoiceId from WhatsApp/Email links.
-// Shows the full invoice with download. No payment actions.
-// Has a link to the payment page.
-// Desktop: full-width invoice preview
-// Mobile: scaled preview that fits the viewport
+// Shows ONLY the invoice document with a download button and
+// a subtle link to the payment page. No portal chrome.
 // ============================================================
 
 import { useState, useEffect } from "react";
@@ -14,11 +11,8 @@ import { supabase } from "@/lib/supabase";
 import type { InvoiceData } from "@/lib/types";
 import { formatNaira } from "@/lib/types";
 import InvoicePreviewPanel from "@/components/invoice/InvoicePreviewPanel";
-import {
-  Loader2, Shield, CreditCard, Lock,
-} from "lucide-react";
+import { Loader2, Shield, CreditCard } from "lucide-react";
 
-/** Convert a Supabase DB row into the frontend InvoiceData shape */
 function dbToInvoice(row: any): InvoiceData {
   return {
     id: row.id,
@@ -112,7 +106,6 @@ export default function InvoicePublicPage() {
     load();
   }, [invoiceId]);
 
-  // ── Loading ──
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
@@ -122,13 +115,12 @@ export default function InvoicePublicPage() {
     );
   }
 
-  // ── Not Found ──
   if (!invoice) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <Shield className="w-16 h-16 text-gray-300 mb-4" />
         <h1 className="text-xl font-bold text-gray-900 mb-2">Invoice Not Found</h1>
-        <p className="text-gray-500 mb-6 text-center">The link may be invalid or the invoice has been removed.</p>
+        <p className="text-gray-500 text-center">The link may be invalid or the invoice has been removed.</p>
       </div>
     );
   }
@@ -136,75 +128,43 @@ export default function InvoicePublicPage() {
   const isPaid = invoice.status === "paid";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50 no-print">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <img src="/lasbca-logo.png" alt="LASBCA" className="w-8 h-8 sm:w-10 sm:h-10 rounded-full shadow-sm" />
-            <div>
-              <h1 className="text-sm sm:text-base font-black text-gray-900 leading-tight">LASBCA</h1>
-              <p className="text-[9px] sm:text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Official Invoice</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Pay Now link — only if not paid */}
-            {!isPaid && (
-              <Link
-                to={`/pay/${invoice.id}`}
-                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-[#006400] hover:bg-[#005000] text-white text-xs sm:text-sm font-bold rounded-lg shadow-sm transition-colors"
-              >
-                <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span>Pay ₦{formatNaira(invoice.totalAmount)}</span>
-              </Link>
-            )}
-            {isPaid && (
-              <span className="px-3 py-1.5 bg-green-100 text-green-800 text-xs font-bold rounded-lg">
-                ✓ Paid
-              </span>
-            )}
-            <div className="flex items-center gap-1 text-gray-400">
-              <Lock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span className="text-[10px] font-semibold hidden sm:inline">Secured</span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main: Invoice Preview (centred, full width) */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+    <div className="min-h-screen bg-gray-100">
+      {/* Invoice content — just the preview panel with toolbar */}
+      <div className="max-w-5xl mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
         <InvoicePreviewPanel
           invoice={invoice}
           stampUrl={stampUrl}
           signatureUrl={signatureUrl}
         />
 
-        {/* Pay Now CTA below invoice (if not paid) */}
+        {/* Pay Now link (if not paid) */}
         {!isPaid && (
-          <div className="mt-5 sm:mt-6 text-center no-print">
+          <div className="mt-4 sm:mt-5 text-center no-print">
             <Link
               to={`/pay/${invoice.id}`}
-              className="inline-flex items-center gap-2 px-6 sm:px-8 py-3 sm:py-3.5 bg-[#006400] hover:bg-[#005000] text-white font-bold text-sm sm:text-base rounded-xl shadow-lg transition-colors"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-[#006400] hover:bg-[#005000] text-white font-bold text-sm sm:text-base rounded-xl shadow-lg transition-colors"
             >
               <CreditCard className="w-5 h-5" />
               Proceed to Pay ₦{formatNaira(invoice.totalAmount)}
             </Link>
           </div>
         )}
-      </div>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-6 sm:mt-10 no-print">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <img src="/lasbca-logo.png" alt="" className="w-7 h-7 rounded-full opacity-60" />
-            <p className="text-xs sm:text-sm font-semibold text-gray-700">LASBCA Invoice Portal</p>
+        {isPaid && (
+          <div className="mt-4 sm:mt-5 text-center no-print">
+            <span className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 font-bold text-sm rounded-xl">
+              ✓ This invoice has been paid
+            </span>
           </div>
+        )}
+
+        {/* Minimal footer */}
+        <div className="text-center mt-6 pb-4 no-print">
           <p className="text-[10px] sm:text-xs text-gray-400">
-            © {new Date().getFullYear()} Lagos State Government. All rights reserved.
+            © {new Date().getFullYear()} Lagos State Building Control Agency. All rights reserved.
           </p>
         </div>
-      </footer>
+      </div>
     </div>
   );
 }
