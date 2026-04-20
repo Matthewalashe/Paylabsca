@@ -10,7 +10,8 @@ import ConfirmModal from "@/components/ui/confirm-modal";
 import { useInvoiceStore } from "@/lib/invoice-store";
 import { formatNaira } from "@/lib/types";
 import type { InvoiceStatus } from "@/lib/types";
-import { Plus, Search, Eye, Calendar, FileText, Trash2 } from "lucide-react";
+import { Plus, Search, Eye, Calendar, FileText, Trash2, Pencil } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
@@ -35,6 +36,7 @@ export default function InvoiceListPage() {
   const [filter, setFilter] = useState("all");
   const { invoices, deleteInvoice } = useInvoiceStore();
   const { user } = useAuth();
+  const navigate = useNavigate();
   
   const [isLoading, setIsLoading] = useState(true);
   const [invoiceToDelete, setInvoiceToDelete] = useState<string | null>(null);
@@ -146,14 +148,34 @@ export default function InvoiceListPage() {
                   </div>
                 </div>
               </Link>
-              <div className="flex items-center gap-2 mt-2 sm:mt-0 sm:absolute sm:right-4 sm:top-1/2 sm:-translate-y-1/2">
-                {/* Only allow deletion of drafts by billing officers */}
+              <div className="flex items-center gap-1.5 mt-2 sm:mt-0 sm:absolute sm:right-4 sm:top-1/2 sm:-translate-y-1/2">
+                {/* Edit + Delete for draft invoices (billing officers only) */}
                 {user?.role === "billing_officer" && inv.status === "draft" && (
-                  <button 
-                    onClick={() => setInvoiceToDelete(inv.id)}
-                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  <>
+                    <button
+                      onClick={(e) => { e.preventDefault(); navigate(`/invoices/${inv.id}/edit`); }}
+                      className="p-2 text-gray-400 hover:text-[#006400] hover:bg-green-50 rounded-lg transition-colors"
+                      title="Edit draft"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={(e) => { e.preventDefault(); setInvoiceToDelete(inv.id); }}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete draft"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+                {/* Edit for rejected invoices (billing officers only) */}
+                {user?.role === "billing_officer" && inv.status === "rejected" && (
+                  <button
+                    onClick={(e) => { e.preventDefault(); navigate(`/invoices/${inv.id}/edit`); }}
+                    className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                    title="Edit & revise"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Pencil className="w-4 h-4" />
                   </button>
                 )}
               </div>

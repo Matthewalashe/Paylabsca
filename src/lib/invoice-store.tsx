@@ -7,6 +7,23 @@ import type { InvoiceData } from "./types";
 import { supabase } from "./supabase";
 import { useAuth } from "./auth";
 
+/**
+ * Get a working URL for a storage file.
+ * Tries getPublicUrl first (works if bucket is public).
+ * Falls back to createSignedUrl (works if bucket is private).
+ */
+async function getStorageUrl(bucket: string, path: string): Promise<string> {
+  // Try public URL first (fastest, no expiry)
+  const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(path);
+  if (pubData?.publicUrl) {
+    // Add cache-buster only once per session to avoid excessive re-fetching
+    return pubData.publicUrl;
+  }
+  // Fallback: signed URL valid for 1 hour
+  const { data: signedData } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+  return signedData?.signedUrl || "";
+}
+
 interface InvoiceStoreContextType {
   invoices: InvoiceData[];
   isLoading: boolean;
@@ -65,6 +82,7 @@ function dbToInvoice(row: any): InvoiceData {
     rejectionNote: row.rejection_note,
     paystackReference: row.payment_reference,
     paymentLink: row.payment_link,
+    createdByName: row.creator?.name || "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -121,6 +139,9 @@ export function InvoiceStoreProvider({ children }: { children: ReactNode }) {
         *,
         invoice_photos (
           id, storage_path, position, caption
+        ),
+        creator:profiles!invoices_created_by_fkey (
+          name
         )
       `)
       .order("created_at", { ascending: false });
@@ -138,19 +159,23 @@ export function InvoiceStoreProvider({ children }: { children: ReactNode }) {
     const { data, error } = await query;
 
     if (!error && data) {
-      const mappedInvoices = data.map(row => {
+      const mappedInvoices = await Promise.all(data.map(async (row: any) => {
         const inv = dbToInvoice(row);
-        inv.photos = (row.invoice_photos || []).map((p: any) => {
-          const { data: urlData } = supabase.storage.from("invoice-photos").getPublicUrl(p.storage_path);
-          return {
-            id: p.id,
-            url: `${urlData.publicUrl}?t=${new Date().getTime()}`,
-            position: p.position as any,
-            caption: p.caption || ""
-          };
-        });
+        const photoRows = row.invoice_photos || [];
+        photoRows.sort((a: any, b: any) => a.position - b.position);
+        inv.photos = await Promise.all(
+          photoRows.map(async (p: any) => {
+            const url = await getStorageUrl("invoice-photos", p.storage_path);
+            return {
+              id: p.id,
+              url,
+              position: p.position as any,
+              caption: p.caption || ""
+            };
+          })
+        );
         return inv;
-      });
+      }));
       setInvoices(mappedInvoices);
     }
     setIsLoading(false);

@@ -2,6 +2,16 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { useAuth } from "./auth";
 
+/**
+ * Get a working URL for a storage file (public URL with signed fallback).
+ */
+async function getStorageUrl(bucket: string, path: string): Promise<string> {
+  const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(path);
+  if (pubData?.publicUrl) return pubData.publicUrl;
+  const { data: signedData } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+  return signedData?.signedUrl || "";
+}
+
 export interface CertAssets {
   stampUrl: string | null;
   signatureUrl: string | null;
@@ -41,16 +51,12 @@ export function useCertAssets() {
           const newAssets = { ...assets };
           
           for (const row of data) {
-            // Get public URL or signed URL
-            const { data: urlData } = supabase.storage
-              .from("cert-assets")
-              .getPublicUrl(row.storage_path);
+            const url = await getStorageUrl("cert-assets", row.storage_path);
               
             if (row.asset_type === "stamp") {
-              // Add a cache buster
-              newAssets.stampUrl = `${urlData.publicUrl}?t=${new Date().getTime()}`;
+              newAssets.stampUrl = url;
             } else if (row.asset_type === "signature") {
-              newAssets.signatureUrl = `${urlData.publicUrl}?t=${new Date().getTime()}`;
+              newAssets.signatureUrl = url;
             }
           }
           setAssets(newAssets);
@@ -91,14 +97,14 @@ export function useCertAssets() {
     if (insertError) throw insertError;
 
     // 4. Get URL and update state
-    const { data: urlData } = supabase.storage.from("cert-assets").getPublicUrl(filePath);
+    const url = await getStorageUrl("cert-assets", filePath);
     
     setAssets(prev => ({
       ...prev,
-      [type === "stamp" ? "stampUrl" : "signatureUrl"]: `${urlData.publicUrl}?t=${new Date().getTime()}`
+      [type === "stamp" ? "stampUrl" : "signatureUrl"]: url
     }));
 
-    return urlData.publicUrl;
+    return url;
   };
 
   const deleteAsset = async (type: "stamp" | "signature") => {

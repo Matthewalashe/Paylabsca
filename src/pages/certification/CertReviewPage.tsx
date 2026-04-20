@@ -131,6 +131,12 @@ export default function CertReviewPage() {
               <p className="text-xs text-gray-400 uppercase tracking-wider">Building Use</p>
               <p className="font-medium">{invoice.buildingUse}</p>
             </div>
+            {invoice.createdByName && (
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wider">Created By</p>
+                <p className="font-medium">{invoice.createdByName}</p>
+              </div>
+            )}
             <div className="ml-auto text-right">
               <p className="text-xs text-gray-400 uppercase tracking-wider">Total Amount</p>
               <p className="font-black text-2xl text-[#D4AF37]">₦{new Intl.NumberFormat("en-NG").format(invoice.totalAmount)}</p>

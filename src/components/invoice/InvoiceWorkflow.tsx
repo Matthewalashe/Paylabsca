@@ -164,12 +164,17 @@ export default function InvoiceWorkflow({ invoice, onUpdateInvoice }: InvoiceWor
             <FileText className="w-5 h-5 text-amber-600 flex-shrink-0" />
             <div>
               <p className="font-semibold text-amber-800">Draft Status</p>
-              <p className="text-sm text-amber-600">This invoice is in draft mode. Submit it for certification.</p>
+              <p className="text-sm text-amber-600">This invoice is in draft mode. Edit or submit it for certification.</p>
             </div>
           </div>
-          <button onClick={() => setShowSubmitConfirm(true)} className="flex items-center gap-2 px-5 sm:px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shadow-sm w-full sm:w-auto justify-center text-sm sm:text-base flex-shrink-0">
-            Submit for Certification <ArrowRight className="w-4 h-4" />
-          </button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <button onClick={() => navigate(`/invoices/${invoice.id}/edit`)} className="flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-white border border-amber-300 text-amber-700 font-bold rounded-lg shadow-sm hover:bg-amber-100 flex-1 sm:flex-none justify-center text-sm sm:text-base">
+              <FileText className="w-4 h-4" /> Edit Invoice
+            </button>
+            <button onClick={() => setShowSubmitConfirm(true)} className="flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shadow-sm flex-1 sm:flex-none justify-center text-sm sm:text-base">
+              Submit <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -185,12 +190,18 @@ export default function InvoiceWorkflow({ invoice, onUpdateInvoice }: InvoiceWor
               <p className="text-red-700">{invoice.rejectionNote}</p>
             </div>
           )}
-          <button
-            onClick={() => navigate(`/invoices/${invoice.id}/edit`)}
-            className="px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-lg"
-          >
-            Edit & Revise Invoice
-          </button>
+          {/* Only billing officers can edit rejected invoices */}
+          {user?.role === "billing_officer" && (
+            <button
+              onClick={() => navigate(`/invoices/${invoice.id}/edit`)}
+              className="px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-lg"
+            >
+              Edit & Revise Invoice
+            </button>
+          )}
+          {user?.role === "certification_officer" && (
+            <p className="text-sm text-red-600 italic">This invoice has been returned to the billing officer for revision.</p>
+          )}
         </div>
       )}
 

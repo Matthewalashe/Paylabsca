@@ -26,9 +26,11 @@ import type { InvoiceData, InvoiceLineItem, LagosLGA, BuildingUseType, Certifica
 import { toast } from "sonner";
 import {
   Save, Send, Eye, EyeOff, Plus, Trash2, MapPin, Camera,
-  Building2, FileText, ArrowLeft, UploadCloud, AlertCircle, Loader2, CheckCircle2
+  Building2, FileText, ArrowLeft, UploadCloud, AlertCircle, Loader2, CheckCircle2, Map
 } from "lucide-react";
 import { geocodeAddress } from "@/lib/geocode";
+import { lazy, Suspense } from "react";
+const MapPicker = lazy(() => import("@/components/ui/MapPicker"));
 
 const BUILDING_TYPES: BuildingUseType[] = ["Residential", "Commercial", "Industrial", "Mixed-Use", "Institutional"];
 
@@ -202,10 +204,63 @@ export default function InvoiceEditorPage() {
     }));
   };
 
-  // Real File Upload Handler
-  const handleFileUpload = (index: number, file: File) => {
+  // ============================================================
+  // Photo validation constants
+  // ============================================================
+  const MAX_PHOTO_SIZE_MB = 5;
+  const MAX_PHOTO_SIZE_BYTES = MAX_PHOTO_SIZE_MB * 1024 * 1024;
+  const ALLOWED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+  const MAX_PHOTO_DIMENSION = 4096; // pixels
+
+  /**
+   * Validate image dimensions by loading it into an Image element.
+   * Returns { valid, width, height } or { valid: false } if too large.
+   */
+  const validateImageDimensions = (file: File): Promise<{ valid: boolean; width?: number; height?: number }> => {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        URL.revokeObjectURL(img.src);
+        if (img.width > MAX_PHOTO_DIMENSION || img.height > MAX_PHOTO_DIMENSION) {
+          resolve({ valid: false, width: img.width, height: img.height });
+        } else {
+          resolve({ valid: true, width: img.width, height: img.height });
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        resolve({ valid: false });
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  // Real File Upload Handler — with validation
+  const handleFileUpload = async (index: number, file: File) => {
     if (!file) return;
     
+    // 1. Validate file type
+    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+      toast.error(`Photo ${index + 1}: Invalid format. Accepted: JPG, PNG, WebP.`);
+      return;
+    }
+
+    // 2. Validate file size
+    if (file.size > MAX_PHOTO_SIZE_BYTES) {
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      toast.error(`Photo ${index + 1}: File too large (${sizeMB}MB). Maximum is ${MAX_PHOTO_SIZE_MB}MB.`);
+      return;
+    }
+
+    // 3. Validate dimensions
+    const dimResult = await validateImageDimensions(file);
+    if (!dimResult.valid) {
+      toast.error(
+        `Photo ${index + 1}: Image too large (${dimResult.width || "?"}×${dimResult.height || "?"}px). Maximum is ${MAX_PHOTO_DIMENSION}×${MAX_PHOTO_DIMENSION}px.`
+      );
+      return;
+    }
+
     const objectUrl = URL.createObjectURL(file);
     const newUrls = [...photoUrls];
     newUrls[index] = objectUrl;
@@ -221,6 +276,7 @@ export default function InvoiceEditorPage() {
       .filter(Boolean) as InvoiceData["photos"];
     
     updateField("photos", photos);
+    toast.success(`Photo ${index + 1} ready (${dimResult.width}×${dimResult.height}px, ${(file.size / 1024).toFixed(0)}KB)`);
   };
 
   const handlePhotoRemove = (index: number) => {
@@ -242,15 +298,20 @@ export default function InvoiceEditorPage() {
 
   // Helper: upload pending photo files to Supabase storage
   const uploadPendingPhotos = async (invoiceId: string) => {
+    const failedPhotos: number[] = [];
     for (let i = 0; i < pendingFiles.length; i++) {
       const file = pendingFiles[i];
       if (file) {
         try {
           await uploadPhoto(invoiceId, file, (i + 1) as 1 | 2 | 3 | 4);
-        } catch (err) {
+        } catch (err: any) {
           console.error(`Failed to upload photo ${i + 1}:`, err);
+          failedPhotos.push(i + 1);
         }
       }
+    }
+    if (failedPhotos.length > 0) {
+      toast.error(`Failed to upload photo(s) ${failedPhotos.join(", ")}. Please re-edit and re-upload them.`);
     }
   };
 
@@ -510,12 +571,46 @@ export default function InvoiceEditorPage() {
                   </div>
                 )}
                 {!isGeocoding && geocodeStatus === "not_found" && (
-                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span className="font-medium">Could not detect coordinates — please enter manually</span>
+                  <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-medium block">Could not detect coordinates automatically</span>
+                      <span className="text-[10px] text-amber-600 mt-0.5 block">
+                        Tip: Include area name, e.g. "25 Broad Street, Ikeja, Lagos" — or enter coordinates manually below.
+                      </span>
+                    </div>
                   </div>
                 )}
+
+                {/* Map Picker Toggle */}
+                <button
+                  type="button"
+                  onClick={() => updateField("_showMap" as any, !(invoice as any)._showMap)}
+                  className="flex items-center gap-2 text-xs font-semibold text-[#006400] hover:text-[#005000] bg-green-50 hover:bg-green-100 px-3 py-2 rounded-lg transition-colors w-full justify-center"
+                >
+                  <Map className="w-3.5 h-3.5" /> {(invoice as any)._showMap ? "Hide Map" : "📍 Pick on Map / Verify Coordinates"}
+                </button>
               </div>
+
+              {/* Map Picker (lazy loaded) */}
+              {(invoice as any)._showMap && (
+                <Suspense fallback={
+                  <div className="h-[200px] bg-gray-100 rounded-xl flex items-center justify-center">
+                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                  </div>
+                }>
+                  <MapPicker
+                    latitude={invoice.coordinates.latitude}
+                    longitude={invoice.coordinates.longitude}
+                    onSelect={(lat, lng) => {
+                      updateField("coordinates", { latitude: lat, longitude: lng });
+                      setGeocodeStatus("found");
+                      toast.success(`Coordinates set: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                    }}
+                    onClose={() => updateField("_showMap" as any, false)}
+                  />
+                </Suspense>
+              )}
             </div>
 
             {/* --- Section: Property Photos --- */}
@@ -530,7 +625,7 @@ export default function InvoiceEditorPage() {
                     <label className="text-xs text-gray-500 font-medium">Photo {i + 1}</label>
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/webp"
                       ref={fileInputRefs[i]}
                       className="hidden"
                       onChange={(e) => e.target.files?.[0] && handleFileUpload(i, e.target.files[0])}
@@ -560,7 +655,9 @@ export default function InvoiceEditorPage() {
                 ))}
               </div>
               <ErrorMsg error={errors.photos} />
-              <p className="text-[10px] text-gray-400 mt-3 text-center">Click panels to upload images (JPG, PNG). Images will appear on the invoice.</p>
+              <p className="text-[10px] text-gray-400 mt-3 text-center">
+                Accepted: JPG, PNG, WebP — Max 5MB per photo — Max 4096×4096px
+              </p>
             </div>
 
             {/* --- Section: Certificate & Codes --- */}

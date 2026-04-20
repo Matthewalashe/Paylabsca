@@ -84,6 +84,9 @@ export default function CertDashboard() {
                 <div className="flex-1 min-w-0">
                   <span className="font-mono text-[11px] font-bold text-gray-900">{inv.invoiceNumber}</span>
                   <p className="text-[11px] text-gray-400 truncate">{inv.clientName}</p>
+                  {inv.createdByName && (
+                    <p className="text-[10px] text-gray-400 truncate">by {inv.createdByName}</p>
+                  )}
                 </div>
                 <p className="font-semibold text-gray-900 text-[13px]">₦{formatNaira(inv.totalAmount)}</p>
                 <Button size="sm" className="h-7 text-[11px] rounded-lg bg-[#D4AF37] hover:bg-[#c9a430] text-white opacity-0 group-hover:opacity-100 transition-opacity">Review</Button>
@@ -142,7 +145,9 @@ export default function CertDashboard() {
                       {inv.status === "pending_approval" ? "Pending" : inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
                     </Badge>
                   </div>
-                  <p className="text-[12px] text-gray-400 truncate mt-0.5">{inv.clientName}</p>
+                  <p className="text-[12px] text-gray-400 truncate mt-0.5">
+                    {inv.clientName}{inv.createdByName ? ` — by ${inv.createdByName}` : ""}
+                  </p>
                 </div>
                 <p className="font-semibold text-gray-900 text-[13px]">₦{formatNaira(inv.totalAmount)}</p>
                 <Eye className="w-3.5 h-3.5 text-gray-200" />

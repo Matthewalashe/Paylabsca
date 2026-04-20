@@ -39,6 +39,7 @@ export function formatPhoneForWhatsApp(phone: string): string {
  */
 function buildWhatsAppMessage(invoice: InvoiceData): string {
   const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;
+  const invoiceUrl = `${window.location.origin}/invoice/${invoice.id}`;
   const dueDate = new Date(invoice.dueDate).toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
@@ -60,6 +61,9 @@ function buildWhatsAppMessage(invoice: InvoiceData): string {
     ``,
     `💳 *Pay securely here:*`,
     paymentUrl,
+    ``,
+    `📥 *View & Download Full Invoice:*`,
+    invoiceUrl,
     ``,
     `_This is an official message from the Lagos State Building Control Agency (LASBCA)._`,
   ].join("\n");

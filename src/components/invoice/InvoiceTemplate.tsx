@@ -30,6 +30,8 @@ interface InvoiceTemplateProps {
   showSignature?: boolean;   // Only show after authorization
   showQRCode?: boolean;      // Only show after sent status
   showPayButton?: boolean;   // Only show in client-facing view
+  stampUrl?: string | null;  // Overrides context stamp
+  signatureUrl?: string | null; // Overrides context signature
   className?: string;
 }
 
@@ -39,9 +41,13 @@ export default function InvoiceTemplate({
   showSignature = false,
   showQRCode = true,
   showPayButton = true,
+  stampUrl: propsStampUrl = null,
+  signatureUrl: propsSignatureUrl = null,
   className = "",
 }: InvoiceTemplateProps) {
-  const { stampUrl, signatureUrl } = useCertAssets();
+  const { stampUrl: ctxStampUrl, signatureUrl: ctxSignatureUrl } = useCertAssets();
+  const stampUrl = propsStampUrl || ctxStampUrl;
+  const signatureUrl = propsSignatureUrl || ctxSignatureUrl;
   const actualStamp = stampUrl || stampImageFallback;
   const actualSignature = signatureUrl || signatureImageFallback;
   const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;

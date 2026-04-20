@@ -142,8 +142,8 @@ CREATE TRIGGER set_cert_assets_updated_at
 -- ============================================================
 -- STORAGE BUCKETS
 -- ============================================================
-INSERT INTO storage.buckets (id, name, public) VALUES ('invoice-photos', 'invoice-photos', false) ON CONFLICT DO NOTHING;
-INSERT INTO storage.buckets (id, name, public) VALUES ('cert-assets', 'cert-assets', false) ON CONFLICT DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('invoice-photos', 'invoice-photos', true) ON CONFLICT DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('cert-assets', 'cert-assets', true) ON CONFLICT DO NOTHING;
 
 -- Storage Policies
 CREATE POLICY "auth_upload_photos" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'invoice-photos');
@@ -180,7 +180,7 @@ CREATE POLICY "invoices_insert" ON invoices FOR INSERT TO authenticated
   WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'billing_officer'));
 -- Users can update depending on role
 CREATE POLICY "invoices_update" ON invoices FOR UPDATE TO authenticated USING (
-  (created_by = auth.uid() AND status = 'draft') OR 
+  created_by = auth.uid() OR
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'certification_officer')
 );
 -- Only drafts can be deleted by creator

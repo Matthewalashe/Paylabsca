@@ -102,6 +102,7 @@ export interface InvoiceData {
 
   // Workflow
   createdBy?: string;            // user ID
+  createdByName?: string;        // billing officer name (joined from profiles)
   approvedBy?: string;           // user ID
   approvedAt?: string;           // ISO datetime
   sentAt?: string;               // ISO datetime

@@ -32,6 +32,7 @@ export function isEmailConfigured(): boolean {
  */
 function buildEmailHtml(invoice: InvoiceData): string {
   const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;
+  const invoiceUrl = `${window.location.origin}/invoice/${invoice.id}`;
   const dueDate = new Date(invoice.dueDate).toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
@@ -74,6 +75,13 @@ function buildEmailHtml(invoice: InvoiceData): string {
       <a href="${paymentUrl}" 
          style="display: inline-block; background-color: #006400; color: #ffffff; font-weight: 700; font-size: 15px; padding: 14px 40px; border-radius: 6px; text-decoration: none;">
         Click Here To Pay Securely
+      </a>
+    </div>
+
+    <div style="text-align: center; margin: 12px 0 20px;">
+      <a href="${invoiceUrl}" 
+         style="display: inline-block; background-color: #f3f4f6; color: #374151; font-weight: 600; font-size: 13px; padding: 10px 28px; border-radius: 6px; text-decoration: none; border: 1px solid #e5e7eb;">
+        📄 View &amp; Download Full Invoice
       </a>
     </div>
 
