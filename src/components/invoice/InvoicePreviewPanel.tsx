@@ -13,14 +13,11 @@ interface InvoicePreviewPanelProps {
   stampUrl?: string | null;
   signatureUrl?: string | null;
   className?: string;
-  /** If true, hide the toolbar (used on the clean invoice page) */
   hideToolbar?: boolean;
 }
 
 /**
- * Recursively convert all oklch/oklab colors in computed styles to rgb
- * so html2canvas can parse them. Works by walking every element and
- * overriding color, background-color, border-color with rgb equivalents.
+ * Convert oklch/oklab/color() values to rgb so html2canvas can parse them.
  */
 function convertOklchToRgb(root: HTMLElement) {
   const canvas = document.createElement("canvas");
@@ -31,7 +28,6 @@ function convertOklchToRgb(root: HTMLElement) {
   function toRgb(color: string): string {
     if (!color || color === "transparent" || color === "rgba(0, 0, 0, 0)") return color;
     if (color.includes("oklch") || color.includes("oklab") || color.includes("color(")) {
-      // Use canvas to convert to rgb
       ctx.clearRect(0, 0, 1, 1);
       ctx.fillStyle = color;
       ctx.fillRect(0, 0, 1, 1);
@@ -45,26 +41,15 @@ function convertOklchToRgb(root: HTMLElement) {
   els.forEach((el) => {
     const htmlEl = el as HTMLElement;
     const cs = getComputedStyle(htmlEl);
-    const props = [
-      "color", "background-color", "border-color",
+    ["color", "background-color", "border-color",
       "border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
-      "outline-color", "text-decoration-color", "box-shadow",
-    ];
-    props.forEach((p) => {
+      "outline-color", "text-decoration-color",
+    ].forEach((p) => {
       const val = cs.getPropertyValue(p);
       if (val && (val.includes("oklch") || val.includes("oklab") || val.includes("color("))) {
         htmlEl.style.setProperty(p, toRgb(val));
       }
     });
-  });
-
-  // Also the root itself
-  const rootCs = getComputedStyle(root);
-  ["color", "background-color"].forEach((p) => {
-    const val = rootCs.getPropertyValue(p);
-    if (val && (val.includes("oklch") || val.includes("oklab") || val.includes("color("))) {
-      root.style.setProperty(p, toRgb(val));
-    }
   });
 }
 
@@ -78,24 +63,45 @@ export default function InvoicePreviewPanel({
   const [isDownloading, setIsDownloading] = useState(false);
   const hiddenRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const invoiceRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.45);
+  const [contentHeight, setContentHeight] = useState(1123);
 
-  // Responsive scale calculation via ResizeObserver
+  // Measure the actual invoice content height
+  const measureInvoice = useCallback(() => {
+    if (!invoiceRef.current) return;
+    const h = invoiceRef.current.scrollHeight;
+    if (h > 0) setContentHeight(h);
+  }, []);
+
+  // Responsive scale via ResizeObserver
   const updateScale = useCallback(() => {
     if (!containerRef.current) return;
-    const containerWidth = containerRef.current.clientWidth - 16; // padding
-    const invoiceWidth = 794; // .invoice-page = 210mm ≈ 794px
-    const newScale = Math.min(1, containerWidth / invoiceWidth);
-    setScale(newScale);
+    const pad = 16; // p-2 = 8px each side
+    const containerWidth = containerRef.current.clientWidth - pad;
+    const invoiceWidth = 794; // .invoice-page = 210mm
+    setScale(Math.min(1, containerWidth / invoiceWidth));
   }, []);
 
   useEffect(() => {
     updateScale();
+    measureInvoice();
+
     if (!containerRef.current) return;
-    const observer = new ResizeObserver(updateScale);
+    const observer = new ResizeObserver(() => {
+      updateScale();
+      measureInvoice();
+    });
     observer.observe(containerRef.current);
+    if (invoiceRef.current) observer.observe(invoiceRef.current);
     return () => observer.disconnect();
-  }, [updateScale]);
+  }, [updateScale, measureInvoice]);
+
+  // Re-measure after images load
+  useEffect(() => {
+    const timer = setTimeout(measureInvoice, 1500);
+    return () => clearTimeout(timer);
+  }, [measureInvoice, invoice]);
 
   // PDF Download
   const handleDownload = async () => {
@@ -104,7 +110,6 @@ export default function InvoicePreviewPanel({
       const el = hiddenRef.current;
       if (!el) throw new Error("Render target missing");
 
-      // Position off-screen but visible (display:block) for html2canvas
       el.style.cssText = `
         position: absolute;
         left: -9999px;
@@ -116,10 +121,7 @@ export default function InvoicePreviewPanel({
         background: white;
       `;
 
-      // Wait for images to load
       await new Promise((r) => setTimeout(r, 800));
-
-      // Convert oklch colors to rgb so html2canvas can parse them
       convertOklchToRgb(el);
 
       const html2canvasModule = await import("html2canvas");
@@ -136,7 +138,6 @@ export default function InvoicePreviewPanel({
         height: el.scrollHeight,
       });
 
-      // Hide again
       el.style.cssText = "display: none;";
 
       const imgData = canvas.toDataURL("image/png");
@@ -145,7 +146,6 @@ export default function InvoicePreviewPanel({
       const pdfH = (canvas.height * pdfW) / canvas.width;
       pdf.addImage(imgData, "PNG", 0, 0, pdfW, pdfH);
 
-      // Save via blob (mobile-compatible)
       const blob = pdf.output("blob");
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -158,14 +158,15 @@ export default function InvoicePreviewPanel({
       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
     } catch (err) {
       console.error("PDF generation error:", err);
-      // Fallback: open print dialog
       window.print();
     } finally {
       setIsDownloading(false);
     }
   };
 
-  const invoiceHeight = 1123; // 297mm ≈ 1123px
+  // Compute the visible dimensions after scaling
+  const scaledWidth = 794 * scale;
+  const scaledHeight = contentHeight * scale;
 
   return (
     <div className={className}>
@@ -194,34 +195,44 @@ export default function InvoicePreviewPanel({
         </div>
       )}
 
-      {/* Scaled Preview Container */}
+      {/* Scaled Preview — container sizes itself to the SCALED dimensions */}
       <div
         ref={containerRef}
-        className="bg-gray-200 rounded-2xl border border-gray-300 overflow-hidden p-2 sm:p-3 lg:p-4"
+        className="bg-gray-200 rounded-2xl border border-gray-300 overflow-hidden"
+        style={{ padding: 8 }}
       >
+        {/* This wrapper is sized to the exact scaled content dimensions,
+            centering the invoice within the container */}
         <div
+          className="mx-auto"
           style={{
-            width: 794,
-            height: invoiceHeight,
-            transform: `scale(${scale})`,
-            transformOrigin: "top left",
-            marginBottom: invoiceHeight * (scale - 1),
-            marginRight: 794 * (scale - 1),
+            width: scaledWidth,
+            height: scaledHeight,
+            overflow: "hidden",
           }}
         >
-          <InvoiceTemplate
-            invoice={invoice}
-            showStamp={true}
-            showSignature={true}
-            showQRCode={true}
-            showPayButton={false}
-            stampUrl={stampUrl}
-            signatureUrl={signatureUrl}
-          />
+          <div
+            ref={invoiceRef}
+            style={{
+              width: 794,
+              transformOrigin: "top left",
+              transform: `scale(${scale})`,
+            }}
+          >
+            <InvoiceTemplate
+              invoice={invoice}
+              showStamp={true}
+              showSignature={true}
+              showQRCode={true}
+              showPayButton={false}
+              stampUrl={stampUrl}
+              signatureUrl={signatureUrl}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Hidden off-screen full-size render target for PDF */}
+      {/* Hidden full-size render target for PDF */}
       <div ref={hiddenRef} style={{ display: "none" }} aria-hidden="true">
         <InvoiceTemplate
           invoice={invoice}

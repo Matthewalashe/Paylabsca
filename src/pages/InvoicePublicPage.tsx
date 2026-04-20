@@ -130,7 +130,7 @@ export default function InvoicePublicPage() {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Invoice content — just the preview panel with toolbar */}
-      <div className="max-w-5xl mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
+      <div className="max-w-5xl mx-auto px-4 py-4 sm:py-6">
         <InvoicePreviewPanel
           invoice={invoice}
           stampUrl={stampUrl}
