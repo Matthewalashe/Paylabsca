@@ -118,6 +118,10 @@ export interface InvoiceData {
   rejectionNote?: string;
   createdAt: string;
   updatedAt: string;
+
+  // LIRS Integration
+  lirs_receipt_id?: string;     // UUID of generated revenue receipt
+  lirs_payer_id?: string;       // Assigned LIRS payer ID (e.g. "C-1234567")
 }
 
 /** Revenue codes */

@@ -22,6 +22,7 @@ import CertSettingsPage from "@/pages/certification/CertSettingsPage";
 import FinancialRecordsPage from "@/pages/certification/FinancialRecordsPage";
 import PaymentPage from "@/pages/PaymentPage";
 import InvoicePublicPage from "@/pages/InvoicePublicPage";
+import RevenueReceiptPage from "@/pages/RevenueReceiptPage";
 
 // Context Providers
 import { AuthProvider } from "@/lib/auth";
@@ -115,6 +116,9 @@ export default function App() {
               
               {/* Public Invoice View / Download (from WhatsApp/Email links) */}
               <Route path="/invoice/:invoiceId" element={<InvoicePublicPage />} />
+              
+              {/* Public Revenue Receipt (LIRS format) */}
+              <Route path="/receipt/:receiptId" element={<RevenueReceiptPage />} />
               
               {/* Fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />
