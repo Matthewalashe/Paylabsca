@@ -237,6 +237,42 @@ export default function InvoiceWorkflow({ invoice, onUpdateInvoice }: InvoiceWor
         </div>
       )}
 
+      {/* ===== PAID — Show Revenue Receipt ===== */}
+      {invoice.status === "paid" && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 sm:p-5 no-print">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-emerald-800">Payment Received ✅</p>
+                <p className="text-sm text-emerald-600">
+                  Paid on {invoice.paidAt ? new Date(invoice.paidAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                  {invoice.paystackReference && <span className="ml-1 font-mono text-xs">• Ref: {invoice.paystackReference}</span>}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <a
+                href={`${window.location.origin}/receipt/${invoice.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex gap-2 items-center px-4 py-2.5 bg-[#006400] text-white rounded-lg shadow-sm font-bold hover:bg-[#005000] flex-1 sm:flex-none justify-center text-sm transition-colors"
+              >
+                <FileText className="w-4 h-4" /> View Revenue Receipt
+              </a>
+              <a
+                href={`${window.location.origin}/pay/${invoice.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex gap-2 items-center px-4 py-2.5 bg-white border border-emerald-300 text-emerald-700 rounded-lg shadow-sm font-medium hover:bg-emerald-100 flex-1 sm:flex-none justify-center text-sm transition-colors"
+              >
+                <Download className="w-4 h-4" /> View Payment
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== INVOICE PREVIEW ===== */}
       <div className="w-full overflow-x-auto pb-10 no-print">
         <div className="flex justify-center min-w-0">

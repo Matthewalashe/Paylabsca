@@ -75,6 +75,7 @@ function dbToInvoice(row: any): InvoiceData {
     rejectionNote: row.rejection_note,
     paystackReference: row.payment_reference,
     paymentLink: row.payment_link,
+    lirs_payer_id: row.lirs_payer_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -357,6 +358,15 @@ export default function PaymentPage() {
                     ) : (
                       <span className="text-xs text-gray-400">—</span>
                     )}
+                  </div>
+                  {/* Revenue & Agency Codes */}
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Revenue Code</span>
+                    <span className="font-mono font-bold text-gray-700">{invoice.revenueCode || "4020167"}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Agency Code</span>
+                    <span className="font-mono font-bold text-gray-700">{invoice.agencyCode || "7740103"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-500 flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> Due Date</span>

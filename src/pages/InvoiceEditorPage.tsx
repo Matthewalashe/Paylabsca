@@ -602,10 +602,26 @@ export default function InvoiceEditorPage() {
                   <MapPicker
                     latitude={invoice.coordinates.latitude}
                     longitude={invoice.coordinates.longitude}
-                    onSelect={(lat, lng) => {
+                    onSelect={async (lat, lng) => {
                       updateField("coordinates", { latitude: lat, longitude: lng });
                       setGeocodeStatus("found");
                       toast.success(`Coordinates set: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                      // Reverse geocode: get address from coordinates
+                      try {
+                        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`, {
+                          headers: { "Accept-Language": "en" },
+                        });
+                        const data = await res.json();
+                        if (data?.display_name) {
+                          // Clean up the address — remove country and postcode for cleaner display
+                          const parts = data.display_name.split(", ");
+                          const cleanAddress = parts.slice(0, Math.min(parts.length - 1, 4)).join(", ");
+                          updateField("propertyAddress", cleanAddress);
+                          toast.success(`📍 Address: ${cleanAddress}`);
+                        }
+                      } catch (err) {
+                        console.warn("Reverse geocode failed:", err);
+                      }
                     }}
                     onClose={() => updateField("_showMap" as any, false)}
                   />
