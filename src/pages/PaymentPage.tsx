@@ -26,6 +26,9 @@ const CREDO_API_BASE = CREDO_PUBLIC_KEY.startsWith("1PUB")
   ? "https://api.credocentral.com"
   : "https://api.credodemo.com";
 
+/** True when using Credo demo/sandbox keys (0PUB prefix) */
+const IS_DEMO_ENV = !CREDO_PUBLIC_KEY.startsWith("1PUB");
+
 /** Convert a Supabase DB row into the frontend InvoiceData shape */
 function dbToInvoice(row: any): InvoiceData {
   return {
@@ -89,6 +92,7 @@ export default function PaymentPage() {
   const [isInitializing, setIsInitializing] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [copied, setCopied] = useState(false);
+  const [showTestFallback, setShowTestFallback] = useState(false);
 
   const paymentUrl = `${window.location.origin}/pay/${invoiceId}`;
 
@@ -185,9 +189,10 @@ export default function PaymentPage() {
   const isCredoConfigured = !!CREDO_PUBLIC_KEY && !CREDO_PUBLIC_KEY.includes("_YOUR_") && !CREDO_PUBLIC_KEY.includes("_your_");
 
   const handlePayWithCredo = async () => {
-    if (!isCredoConfigured) { handleSimulatedPayment(); return; }
+    if (!isCredoConfigured) { handleTestPayment(); return; }
     setIsInitializing(true);
     setErrorMsg("");
+    setShowTestFallback(false);
     try {
       const response = await fetch(`${CREDO_API_BASE}/abc/payment/initialize`, {
         method: "POST",
@@ -196,7 +201,7 @@ export default function PaymentPage() {
           amount: Math.round(invoice.totalAmount * 100),
           emailAddress: invoice.clientEmail || "client@lasbca.lg.gov.ng",
           phoneNumber: invoice.clientPhone || "",
-          billNumber: invoice.invoiceNumber,
+          billNumber: invoice.referenceNumber || invoice.invoiceNumber,
           initializeAccount: 1,
           callbackUrl: paymentUrl,
         }),
@@ -205,27 +210,62 @@ export default function PaymentPage() {
       if (data.status === 200 && data.data?.authorizationUrl) {
         window.location.href = data.data.authorizationUrl;
       } else {
-        throw new Error(data.message || data.data?.message || "Failed to initialize LIRS payment");
+        const msg = data.message || data.data?.message || "Failed to initialize LIRS payment";
+        // If the reference doesn't exist or bill type is wrong, show the test fallback
+        const isRefError = /reference does not exist|reconfirm reference|check bill type/i.test(msg);
+        if (isRefError || IS_DEMO_ENV) {
+          setShowTestFallback(true);
+        }
+        throw new Error(msg);
       }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Payment initialization failed");
+      // Also show test fallback in demo environments
+      if (IS_DEMO_ENV) setShowTestFallback(true);
       setIsInitializing(false);
     }
   };
 
-  const handleSimulatedPayment = async () => {
+  /** Test/Demo payment — writes to the real DB so receipt & dashboard work */
+  const handleTestPayment = async () => {
     setIsInitializing(true);
     setStep("processing");
-    await new Promise((r) => setTimeout(r, 2500));
+    setErrorMsg("");
+    setShowTestFallback(false);
+
+    // Simulate a 3-second payment processing delay for realism
+    await new Promise((r) => setTimeout(r, 3000));
+
     try {
-      const simRef = `LASBCA-SIM-${Date.now()}`;
-      const { error } = await supabase.from("invoices").update({ status: "paid", paid_at: new Date().toISOString(), payment_reference: simRef }).eq("id", invoice.id);
+      const now = new Date();
+      // Generate a realistic-looking payment reference
+      const testRef = `CREDO-TEST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+      const { error } = await supabase
+        .from("invoices")
+        .update({
+          status: "paid",
+          paid_at: now.toISOString(),
+          payment_reference: testRef,
+        })
+        .eq("id", invoice.id);
+
       if (error) throw error;
-      setInvoice((prev) => prev ? { ...prev, status: "paid", paidAt: new Date().toISOString(), paystackReference: simRef } : prev);
+
+      setInvoice((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "paid",
+              paidAt: now.toISOString(),
+              paystackReference: testRef,
+            }
+          : prev
+      );
       setStep("success");
     } catch (err) {
-      console.error("Simulated payment error:", err);
-      setErrorMsg("Payment simulation failed.");
+      console.error("Test payment error:", err);
+      setErrorMsg("Test payment failed — check your database connection.");
       setStep("error");
     } finally {
       setIsInitializing(false);
@@ -357,7 +397,35 @@ export default function PaymentPage() {
                   </button>
                 </div>
 
-                {!isCredoConfigured && (
+                {/* Test Payment Fallback — shown when LIRS reference fails or in demo env */}
+                {showTestFallback && (
+                  <div className="space-y-2.5">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 sm:p-4 flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs sm:text-sm font-bold text-blue-800">LIRS Reference Issue</p>
+                        <p className="text-[11px] sm:text-xs text-blue-700 mt-0.5">
+                          The LIRS bill reference could not be validated. You can use the test payment below to verify the full workflow (receipt, dashboard, etc.).
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="xl"
+                      className="w-full text-sm sm:text-base shadow-lg bg-blue-600 hover:bg-blue-700 py-3 sm:py-4"
+                      onClick={handleTestPayment}
+                      disabled={isInitializing}
+                    >
+                      {isInitializing ? (
+                        <span className="flex items-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Processing Test Payment…</span>
+                      ) : (
+                        <span className="flex items-center gap-2"><CreditCard className="w-5 h-5" /> Test Payment — ₦{formatNaira(invoice.totalAmount)}</span>
+                      )}
+                    </Button>
+                    <p className="text-[10px] text-center text-blue-400">This will mark the invoice as paid in the database for testing purposes.</p>
+                  </div>
+                )}
+
+                {!isCredoConfigured && !showTestFallback && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 sm:p-3 flex items-start gap-2">
                     <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                     <p className="text-[11px] sm:text-xs text-amber-700">
@@ -421,7 +489,7 @@ export default function PaymentPage() {
                   href={`${window.location.origin}/invoice/${invoice.id}`}
                   className="flex items-center justify-center gap-2 w-full py-2.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
                 >
-                  <Download className="w-4 h-4" /> View & Download Invoice
+                  <Download className="w-4 h-4" /> View & Download Receipt
                 </a>
               </div>
             )}

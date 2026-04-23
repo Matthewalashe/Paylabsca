@@ -10,7 +10,7 @@ import ConfirmModal from "@/components/ui/confirm-modal";
 import { useInvoiceStore } from "@/lib/invoice-store";
 import { formatNaira } from "@/lib/types";
 import type { InvoiceStatus } from "@/lib/types";
-import { Plus, Search, Eye, Calendar, FileText, Trash2, Pencil } from "lucide-react";
+import { Plus, Search, Eye, Calendar, FileText, Trash2, Pencil, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -149,6 +149,16 @@ export default function InvoiceListPage() {
                 </div>
               </Link>
               <div className="flex items-center gap-1.5 mt-2 sm:mt-0 sm:absolute sm:right-4 sm:top-1/2 sm:-translate-y-1/2">
+                {/* View Receipt button for paid invoices */}
+                {inv.status === "paid" && (
+                  <button
+                    onClick={(e) => { e.preventDefault(); navigate(`/invoices/${inv.id}`); }}
+                    className="flex items-center gap-1 p-1.5 sm:p-2 text-[#006400] hover:bg-green-50 rounded-lg transition-colors"
+                    title="View Receipt"
+                  >
+                    <Download className="w-4 h-4" /> <span className="text-[10px] sm:text-xs font-semibold">Receipt</span>
+                  </button>
+                )}
                 {/* Edit + Delete for draft invoices (billing officers only) */}
                 {user?.role === "billing_officer" && inv.status === "draft" && (
                   <>

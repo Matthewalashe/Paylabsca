@@ -118,7 +118,7 @@ export default function InvoiceTemplate({
         {/* INVOICE title — right-aligned, bold, large */}
         <div className="text-right mb-3">
           <h3 className="text-[32px] font-black text-black tracking-tight uppercase">
-            INVOICE
+            {invoice.status === "paid" ? "RECEIPT" : "INVOICE"}
           </h3>
         </div>
 
@@ -248,7 +248,9 @@ export default function InvoiceTemplate({
 
           {/* ===== 6. TOTAL DUE — Green Bar ===== */}
           <div className="invoice-total-bar flex justify-between items-center mt-1">
-            <span className="text-[16px] font-bold">Total Due</span>
+            <span className="text-[16px] font-bold">
+              {invoice.status === "paid" ? "Amount Paid" : "Total Due"}
+            </span>
             <span className="text-[24px] font-black tracking-tight">
               ₦{formatNaira(invoice.totalAmount)}
             </span>
@@ -258,7 +260,7 @@ export default function InvoiceTemplate({
         {/* ===== 7. INSTANT E-PAYMENT + CODES ===== */}
         <div className="mb-2">
           <h5 className="text-[16px] font-bold text-black mb-1">
-            Instant e-payment Method
+            {invoice.status === "paid" ? "Payment Details" : "Instant e-payment Method"}
           </h5>
           <div className="flex gap-6 text-[12px]">
             <div>
