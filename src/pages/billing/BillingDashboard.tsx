@@ -12,7 +12,7 @@ import { formatNaira } from "@/lib/types";
 import type { InvoiceStatus } from "@/lib/types";
 import {
   Plus, FileText, Clock, CheckCircle, Send, 
-  Eye, Calendar, ArrowRight, Bell, AlertCircle, XCircle,
+  Eye, Calendar, ArrowRight, Bell, AlertCircle, XCircle, Download,
 } from "lucide-react";
 
 function statusBadge(status: InvoiceStatus) {
@@ -148,7 +148,14 @@ export default function BillingDashboard() {
                   <p className="text-[11px] sm:text-[12px] text-gray-400 truncate mt-0.5">{inv.clientName}</p>
                 </div>
                 <p className="font-semibold text-gray-900 text-[12px] sm:text-[13px] flex-shrink-0">₦{formatNaira(inv.totalAmount)}</p>
-                <Eye className="w-3.5 h-3.5 text-gray-200 hidden sm:block" />
+                {inv.status === "paid" ? (
+                  <div className="flex items-center gap-1 bg-green-50 text-[#006400] px-2 py-1 rounded hidden sm:flex">
+                    <Download className="w-3 h-3" />
+                    <span className="text-[10px] font-bold">Receipt</span>
+                  </div>
+                ) : (
+                  <Eye className="w-3.5 h-3.5 text-gray-200 hidden sm:block" />
+                )}
               </Link>
             ))}
           </div>

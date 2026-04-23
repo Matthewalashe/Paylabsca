@@ -50,8 +50,8 @@ serve(async (req) => {
         isPaid = true;
       }
     } else {
-      // No secret key configured — allow simulated payments in demo
-      if (transRef.startsWith("CREDO-SIM-")) {
+      // No secret key configured — allow simulated/test payments in demo
+      if (transRef.startsWith("CREDO-SIM-") || transRef.startsWith("CREDO-TEST-")) {
         isPaid = true;
       } else {
         throw new Error("Payment gateway not fully configured.");
