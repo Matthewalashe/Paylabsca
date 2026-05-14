@@ -2,13 +2,13 @@
 // auth.tsx — Supabase-backed authentication
 // ============================================================
 // Real JWT sessions via Supabase Auth.
-// Cert Officers create users via signUp + profile insert.
+// Cert Officers create users via Edge Function (admin API).
 // Falls back to offline mode if Supabase is unavailable.
 // ============================================================
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { supabase, createIsolatedClient, callEdgeFunction } from "./supabase";
-import type { Session } from "@supabase/supabase-js";
+import { supabase, callEdgeFunction } from "./supabase";
+import { sendWelcomeEmail } from "./email-service";
 
 export type UserRole = "billing_officer" | "certification_officer";
 
@@ -173,48 +173,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     name: string; email: string; phone: string;
     oracleNumber: string; role: UserRole; password: string; department?: string;
   }) => {
-    // Use a separate client so we don't log out the current user
-    const isolatedClient = createIsolatedClient();
-
-    // 1. Create auth user
-    const { data: authData, error: authError } = await isolatedClient.auth.signUp({
-      email: userData.email.trim().toLowerCase(),
-      password: userData.password,
-    });
-
-    if (authError || !authData.user) {
-      return { success: false, error: authError?.message || "Failed to create auth account." };
-    }
-
-    // 2. Insert profile
-    const { error: profileError } = await supabase.from("profiles").insert({
-      id: authData.user.id,
-      name: userData.name.trim(),
-      email: userData.email.trim().toLowerCase(),
-      phone: userData.phone.trim(),
-      oracle_number: userData.oracleNumber.trim(),
-      role: userData.role,
-      department: userData.department || "Building Certification Department",
-      avatar: userData.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2),
-      status: "active",
-    });
-
-    if (profileError) {
-      return { success: false, error: profileError.message };
-    }
-
-    // 3. Audit log
-    if (user) {
-      await supabase.from("audit_log").insert({
-        user_id: user.id,
-        action: "create_user",
-        entity_type: "profile",
-        entity_id: authData.user.id,
-        details: { name: userData.name, email: userData.email, role: userData.role },
+    try {
+      // Use Edge Function with admin API so the user is created with
+      // email already confirmed — they can sign in immediately.
+      const result = await callEdgeFunction("create-user", {
+        email: userData.email.trim().toLowerCase(),
+        password: userData.password,
+        name: userData.name.trim(),
+        phone: userData.phone.trim(),
+        oracleNumber: userData.oracleNumber.trim(),
+        role: userData.role,
+        department: userData.department || "Building Certification Department",
       });
-    }
 
-    return { success: true };
+      // Audit log
+      if (user && result?.userId) {
+        await supabase.from("audit_log").insert({
+          user_id: user.id,
+          action: "create_user",
+          entity_type: "profile",
+          entity_id: result.userId,
+          details: { name: userData.name, email: userData.email, role: userData.role },
+        });
+      }
+
+      // Send welcome/confirmation email with login credentials (fire-and-forget)
+      sendWelcomeEmail({
+        name: userData.name.trim(),
+        email: userData.email.trim().toLowerCase(),
+        password: userData.password,
+        role: userData.role,
+      }).catch(() => {}); // silently ignore email failures
+
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message || "Failed to create user account." };
+    }
   };
 
   const deleteUser = async (id: string) => {

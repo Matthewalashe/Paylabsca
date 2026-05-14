@@ -157,3 +157,107 @@ export async function sendInvoiceEmail(invoice: InvoiceData): Promise<boolean> {
   }
 }
 
+// ============================================================
+// Welcome / Account Confirmation Email
+// ============================================================
+
+function buildWelcomeEmailHtml(params: {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+}): string {
+  const loginUrl = `${window.location.origin}/login`;
+  const roleName = params.role === "certification_officer"
+    ? "Certification Officer"
+    : "Billing Officer";
+
+  return `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+  <div style="background-color: #003200; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: #ffffff; font-size: 18px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Lagos State Building Control Agency</h1>
+    <p style="color: #90EE90; font-size: 12px; margin: 4px 0 0;">Official Billing System — Account Created</p>
+  </div>
+  <div style="padding: 24px; background-color: #ffffff; border: 1px solid #e5e7eb;">
+    <p style="color: #1f2937; font-size: 15px;">Dear <strong>${params.name}</strong>,</p>
+    <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+      Your LASBCA Digital Portal account has been created. You can now sign in using the credentials below.
+    </p>
+    <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 16px 0;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="color: #6b7280; font-size: 14px; padding: 8px 0;">Email</td>
+          <td style="text-align: right; font-weight: 700; color: #1f2937; font-family: monospace; padding: 8px 0;">${params.email}</td>
+        </tr>
+        <tr>
+          <td style="color: #6b7280; font-size: 14px; padding: 8px 0; border-top: 1px solid #e5e7eb;">Password</td>
+          <td style="text-align: right; font-weight: 700; color: #1f2937; font-family: monospace; border-top: 1px solid #e5e7eb; padding: 8px 0;">${params.password}</td>
+        </tr>
+        <tr>
+          <td style="color: #6b7280; font-size: 14px; padding: 8px 0; border-top: 1px solid #e5e7eb;">Role</td>
+          <td style="text-align: right; font-weight: 700; color: #006400; border-top: 1px solid #e5e7eb; padding: 8px 0;">${roleName}</td>
+        </tr>
+      </table>
+    </div>
+    <div style="text-align: center; margin: 24px 0;">
+      <a href="${loginUrl}" style="display: inline-block; background-color: #006400; color: #ffffff; font-weight: 700; font-size: 15px; padding: 14px 40px; border-radius: 6px; text-decoration: none;">
+        Sign In to Your Account
+      </a>
+    </div>
+    <div style="background-color: #FEF3C7; padding: 12px 16px; border-radius: 6px; border: 1px solid #F59E0B; margin: 16px 0;">
+      <p style="color: #92400E; font-size: 13px; margin: 0; line-height: 1.5;">
+        <strong>⚠ Security Notice:</strong> Please change your password after your first sign-in. Do not share your credentials with anyone.
+      </p>
+    </div>
+  </div>
+  <div style="background-color: #f9fafb; padding: 16px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; text-align: center;">
+    <p style="color: #9ca3af; font-size: 11px; margin: 0;">This is an automated message from the LASBCA Billing System. Do not reply to this email.</p>
+    <p style="color: #9ca3af; font-size: 11px; margin: 4px 0 0;">&copy; ${new Date().getFullYear()} Lagos State Government. All rights reserved.</p>
+  </div>
+</div>
+  `.trim();
+}
+
+/**
+ * Send a welcome/confirmation email to a newly created user.
+ * Includes their login credentials and a link to sign in.
+ * Does NOT throw on failure — account creation should still succeed.
+ */
+export async function sendWelcomeEmail(params: {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+}): Promise<boolean> {
+  if (!isEmailConfigured()) {
+    console.warn("[EmailJS] Not configured — skipping welcome email.");
+    return false;
+  }
+
+  ensureInit();
+
+  const roleName = params.role === "certification_officer"
+    ? "Certification Officer"
+    : "Billing Officer";
+
+  const templateParams: Record<string, string> = {
+    to_email: params.email,
+    email: params.email,
+    email_to: params.email,
+    recipient: params.email,
+    user_email: params.email,
+    to_name: params.name,
+    from_name: "LASBCA Billing System",
+    subject: `Your LASBCA Portal Account Has Been Created — ${roleName}`,
+    message: buildWelcomeEmailHtml(params),
+  };
+
+  try {
+    const response = await emailjs.send(SERVICE_ID!, TEMPLATE_ID!, templateParams, PUBLIC_KEY!);
+    console.log("[EmailJS] Welcome email sent:", response.status, response.text);
+    return true;
+  } catch (err: unknown) {
+    console.error("[EmailJS] Welcome email failed:", err);
+    return false;
+  }
+}
