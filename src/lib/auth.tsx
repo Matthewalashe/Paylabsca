@@ -174,66 +174,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }) => {
     try {
       const isolatedClient = createIsolatedClient();
+      const email = userData.email.trim().toLowerCase();
 
       // 1. Create auth user (DB trigger auto-confirms)
       const { data: authData, error: authError } = await isolatedClient.auth.signUp({
-        email: userData.email.trim().toLowerCase(),
+        email,
         password: userData.password,
       });
 
-      if (authError || !authData.user) {
-        return { success: false, error: authError?.message || "Failed to create auth account." };
+      if (authError) {
+        return { success: false, error: authError.message };
       }
+
+      // Supabase returns a "fake" user with empty identities when the email
+      // already exists (to prevent email enumeration). Detect this:
+      if (!authData.user || (authData.user.identities && authData.user.identities.length === 0)) {
+        return { success: false, error: `An account with email "${email}" already exists.` };
+      }
+
+      const userId = authData.user.id;
 
       // 2. Generate verification token
       const verificationToken = crypto.randomUUID();
 
-      // 3. Insert profile
-      const profileData: Record<string, any> = {
-        id: authData.user.id,
+      // 3. Insert profile — try with verification columns first, fallback without
+      const baseProfile: Record<string, any> = {
+        id: userId,
         name: userData.name.trim(),
-        email: userData.email.trim().toLowerCase(),
+        email,
         phone: userData.phone.trim(),
         oracle_number: userData.oracleNumber.trim(),
         role: userData.role,
         department: userData.department || "Building Certification Department",
         avatar: userData.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2),
         status: "active",
-        email_verified: false,
-        verification_token: verificationToken,
       };
 
-      const { error: profileError } = await supabase.from("profiles").insert(profileData);
-
-      if (profileError) {
-        // If email_verified column doesn't exist yet, retry without it
-        if (profileError.message?.includes("email_verified") || profileError.message?.includes("verification_token")) {
-          delete profileData.email_verified;
-          delete profileData.verification_token;
-          const { error: retryError } = await supabase.from("profiles").insert(profileData);
-          if (retryError) {
-            return { success: false, error: retryError.message };
-          }
+      // Try with verification columns
+      let profileInserted = false;
+      const fullProfile = { ...baseProfile, email_verified: false, verification_token: verificationToken };
+      const { error: fullErr } = await supabase.from("profiles").insert(fullProfile);
+      if (!fullErr) {
+        profileInserted = true;
+      } else if (fullErr.message?.includes("email_verified") || fullErr.message?.includes("verification_token")) {
+        // Columns don't exist yet — insert without them
+        const { error: baseErr } = await supabase.from("profiles").insert(baseProfile);
+        if (!baseErr) {
+          profileInserted = true;
         } else {
-          return { success: false, error: profileError.message };
+          return { success: false, error: baseErr.message };
         }
+      } else {
+        return { success: false, error: fullErr.message };
       }
 
-      // 4. Audit log
+      if (!profileInserted) {
+        return { success: false, error: "Failed to create user profile." };
+      }
+
+      // 4. Audit log (fire-and-forget)
       if (user) {
-        await supabase.from("audit_log").insert({
+        supabase.from("audit_log").insert({
           user_id: user.id,
           action: "create_user",
           entity_type: "profile",
-          entity_id: authData.user.id,
-          details: { name: userData.name, email: userData.email, role: userData.role },
-        }).catch(() => {});
+          entity_id: userId,
+          details: { name: userData.name, email, role: userData.role },
+        }).then(() => {});
       }
 
       // 5. Send verification email (fire-and-forget)
       sendVerificationEmail({
         name: userData.name.trim(),
-        email: userData.email.trim().toLowerCase(),
+        email,
         token: verificationToken,
         password: userData.password,
         role: userData.role,
@@ -245,42 +258,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Delete: remove profile row directly (RLS allows cert officers)
-  // Without a profile, the user can't access anything.
+  // Delete: remove profile row directly (RLS must allow cert officers)
   const deleteUser = async (id: string) => {
     if (id === user?.id) return false;
     try {
-      const { error } = await supabase.from("profiles").delete().eq("id", id);
+      // Use .select() to verify the row was actually deleted
+      const { data, error } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("id", id)
+        .select();
+
       if (error) {
-        console.error("Delete profile failed:", error);
-        // Fallback: try Edge Function if deployed
-        try {
-          await callEdgeFunction('delete-user', { userId: id });
-        } catch { return false; }
+        console.error("Delete failed:", error.message);
+        return false;
       }
+
+      // RLS may silently block — check if any rows were actually deleted
+      if (!data || data.length === 0) {
+        console.error("Delete blocked by RLS — no rows affected. Run fix-email-confirm.sql!");
+        return false;
+      }
+
+      // Audit log
       if (user) {
-        await supabase.from("audit_log").insert({
+        supabase.from("audit_log").insert({
           user_id: user.id, action: "delete_user", entity_type: "profile", entity_id: id,
-        }).catch(() => {});
+        }).then(() => {});
       }
       return true;
     } catch (e) {
-      console.error(e);
+      console.error("Delete error:", e);
       return false;
     }
   };
 
   const updateUserRole = async (id: string, role: UserRole) => {
-    const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ role })
+      .eq("id", id)
+      .select();
+
     if (error) {
-      console.error("Update role failed:", error);
+      console.error("Update role failed:", error.message);
+      return false;
+    }
+    if (!data || data.length === 0) {
+      console.error("Update role blocked by RLS — run fix-email-confirm.sql!");
       return false;
     }
     if (user) {
-      await supabase.from("audit_log").insert({
+      supabase.from("audit_log").insert({
         user_id: user.id, action: "update_role", entity_type: "profile", entity_id: id,
         details: { new_role: role },
-      }).catch(() => {});
+      }).then(() => {});
     }
     return true;
   };
@@ -296,15 +328,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const suspendUser = async (id: string) => {
-    const { error } = await supabase.from("profiles").update({ status: "suspended" }).eq("id", id);
-    if (error) console.error("Suspend failed:", error);
-    return !error;
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ status: "suspended" })
+      .eq("id", id)
+      .select();
+
+    if (error) {
+      console.error("Suspend failed:", error.message);
+      return false;
+    }
+    if (!data || data.length === 0) {
+      console.error("Suspend blocked by RLS — run fix-email-confirm.sql!");
+      return false;
+    }
+    return true;
   };
 
   const activateUser = async (id: string) => {
-    const { error } = await supabase.from("profiles").update({ status: "active" }).eq("id", id);
-    if (error) console.error("Activate failed:", error);
-    return !error;
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ status: "active" })
+      .eq("id", id)
+      .select();
+
+    if (error) {
+      console.error("Activate failed:", error.message);
+      return false;
+    }
+    if (!data || data.length === 0) {
+      console.error("Activate blocked by RLS — run fix-email-confirm.sql!");
+      return false;
+    }
+    return true;
   };
 
   return (

@@ -18,8 +18,10 @@ export const supabase = createClient(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      // Use sessionStorage instead of localStorage — session is cleared
+      // when the browser tab/window is closed (security requirement)
+      storage: typeof window !== "undefined" ? window.sessionStorage : undefined,
       // Bypass navigator.locks to prevent 5000ms deadlock timeout
-      // in environments where Web Locks API causes contention
       lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<any>) => {
         return await fn();
       },

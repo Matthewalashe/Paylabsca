@@ -83,36 +83,56 @@ export default function UserManagementPage() {
   };
 
   const handleDeleteUser = async (id: string) => {
-    await deleteUser(id);
-    toast.success("User account removed.");
+    const ok = await deleteUser(id);
+    if (ok) {
+      toast.success("User account removed.");
+    } else {
+      toast.error("Failed to delete user. The SQL fix may not have been applied yet.");
+    }
     setConfirmAction(null);
     loadUsers();
   };
 
   const handleUpgradeUser = async (id: string) => {
-    await updateUserRole(id, "certification_officer");
-    toast.success("User upgraded to Certification Officer.");
+    const ok = await updateUserRole(id, "certification_officer");
+    if (ok) {
+      toast.success("User upgraded to Certification Officer.");
+    } else {
+      toast.error("Failed to upgrade user. The SQL fix may not have been applied yet.");
+    }
     setConfirmAction(null);
     loadUsers();
   };
 
   const handleDowngradeUser = async (id: string) => {
-    await updateUserRole(id, "billing_officer");
-    toast.success("User downgraded to Billing Officer.");
+    const ok = await updateUserRole(id, "billing_officer");
+    if (ok) {
+      toast.success("User downgraded to Billing Officer.");
+    } else {
+      toast.error("Failed to downgrade user. The SQL fix may not have been applied yet.");
+    }
     setConfirmAction(null);
     loadUsers();
   };
 
   const handleSuspendUser = async (id: string) => {
-    await suspendUser(id);
-    toast.success("User account suspended.");
+    const ok = await suspendUser(id);
+    if (ok) {
+      toast.success("User account suspended.");
+    } else {
+      toast.error("Failed to suspend user. The SQL fix may not have been applied yet.");
+    }
     setConfirmAction(null);
     loadUsers();
   };
 
   const handleActivateUser = async (id: string) => {
-    await activateUser(id);
-    toast.success("User account activated.");
+    const ok = await activateUser(id);
+    if (ok) {
+      toast.success("User account activated.");
+    } else {
+      toast.error("Failed to activate user. The SQL fix may not have been applied yet.");
+    }
     setConfirmAction(null);
     loadUsers();
   };
