@@ -21,7 +21,28 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS verification_token TEXT;
 UPDATE profiles SET email_verified = true WHERE email_verified = false OR email_verified IS NULL;
 
 -- ==========================================
--- BLOCK 3: Verify email RPC (public access)
+-- BLOCK 3: FIX RLS — Let cert officers
+-- manage other users (suspend/delete/role)
+-- ==========================================
+-- Drop old restrictive policy (only allows self-update)
+DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
+
+-- Cert officers can update ANY profile, users can update their own
+CREATE POLICY "profiles_update" ON profiles FOR UPDATE TO authenticated
+  USING (
+    id = auth.uid()
+    OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'certification_officer')
+  );
+
+-- Cert officers can delete profiles
+DROP POLICY IF EXISTS "profiles_delete_cert" ON profiles;
+CREATE POLICY "profiles_delete_cert" ON profiles FOR DELETE TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'certification_officer')
+  );
+
+-- ==========================================
+-- BLOCK 4: Verify email RPC (public access)
 -- ==========================================
 CREATE OR REPLACE FUNCTION public.verify_email_token(p_token TEXT)
 RETURNS JSON
@@ -48,7 +69,7 @@ GRANT EXECUTE ON FUNCTION public.verify_email_token(TEXT) TO anon;
 GRANT EXECUTE ON FUNCTION public.verify_email_token(TEXT) TO authenticated;
 
 -- ==========================================
--- BLOCK 4: Generate verification token RPC
+-- BLOCK 5: Generate verification token RPC
 -- ==========================================
 CREATE OR REPLACE FUNCTION public.generate_verification_token(p_user_id UUID)
 RETURNS TEXT
