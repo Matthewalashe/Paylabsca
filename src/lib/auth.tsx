@@ -2,9 +2,8 @@
 // auth.tsx — Supabase-backed authentication
 // ============================================================
 // Real JWT sessions via Supabase Auth.
-// Supabase auto-confirms users (via DB trigger) so signIn works
-// immediately. Email verification is handled separately via our
-// own token + EmailJS system.
+// DB trigger auto-confirms auth users so signIn always works.
+// Email verification tracked separately in profiles table.
 // ============================================================
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
@@ -32,7 +31,6 @@ interface AuthContextType {
   loginWithCredentials: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   login: (role: UserRole) => void;
   logout: () => void;
-  // User management
   getAllUsers: () => Promise<(AppUser & { status: string; createdAt: string })[]>;
   createUser: (data: { name: string; email: string; phone: string; oracleNumber: string; role: UserRole; password: string; department?: string }) => Promise<{ success: boolean; error?: string }>;
   deleteUser: (id: string) => Promise<boolean>;
@@ -69,7 +67,7 @@ function toAppUser(profile: any): AppUser {
     role: profile.role as UserRole,
     department: profile.department || "Building Certification Department",
     avatar: profile.avatar || profile.name?.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2),
-    emailVerified: profile.email_verified ?? true, // default true for legacy rows
+    emailVerified: profile.email_verified ?? true,
   };
 }
 
@@ -77,9 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Listen for auth state changes
   useEffect(() => {
-    // Check initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
         await loadProfile(session.user.id);
@@ -87,10 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     });
 
-    // Subscribe to auth changes — defer profile loading to avoid lock contention
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session?.user) {
-        // Defer to avoid blocking the auth lock
         setTimeout(() => loadProfile(session.user.id), 0);
       } else if (event === "SIGNED_OUT") {
         setUser(null);
@@ -128,7 +122,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (data.user) {
-      // Check if profile is suspended
       const { data: profile } = await supabase
         .from("profiles")
         .select("status")
@@ -140,15 +133,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: "Account suspended. Contact your administrator." };
       }
 
+      if (!profile) {
+        await supabase.auth.signOut();
+        return { success: false, error: "Account not found. Contact your administrator." };
+      }
+
       await loadProfile(data.user.id);
     }
 
     return { success: true };
   };
 
-  const login = (_role: UserRole) => {
-    // Legacy — no-op with Supabase auth
-  };
+  const login = (_role: UserRole) => {};
 
   const logout = async () => {
     await supabase.auth.signOut();
@@ -177,11 +173,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     oracleNumber: string; role: UserRole; password: string; department?: string;
   }) => {
     try {
-      // Use isolated client so we don't log out the current cert officer
       const isolatedClient = createIsolatedClient();
 
-      // 1. Create auth user via signUp
-      // DB trigger auto-confirms the user so they can sign in immediately.
+      // 1. Create auth user (DB trigger auto-confirms)
       const { data: authData, error: authError } = await isolatedClient.auth.signUp({
         email: userData.email.trim().toLowerCase(),
         password: userData.password,
@@ -194,8 +188,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 2. Generate verification token
       const verificationToken = crypto.randomUUID();
 
-      // 3. Insert profile row with verification token
-      const { error: profileError } = await supabase.from("profiles").insert({
+      // 3. Insert profile
+      const profileData: Record<string, any> = {
         id: authData.user.id,
         name: userData.name.trim(),
         email: userData.email.trim().toLowerCase(),
@@ -207,10 +201,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         status: "active",
         email_verified: false,
         verification_token: verificationToken,
-      });
+      };
+
+      const { error: profileError } = await supabase.from("profiles").insert(profileData);
 
       if (profileError) {
-        return { success: false, error: profileError.message };
+        // If email_verified column doesn't exist yet, retry without it
+        if (profileError.message?.includes("email_verified") || profileError.message?.includes("verification_token")) {
+          delete profileData.email_verified;
+          delete profileData.verification_token;
+          const { error: retryError } = await supabase.from("profiles").insert(profileData);
+          if (retryError) {
+            return { success: false, error: retryError.message };
+          }
+        } else {
+          return { success: false, error: profileError.message };
+        }
       }
 
       // 4. Audit log
@@ -221,17 +227,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           entity_type: "profile",
           entity_id: authData.user.id,
           details: { name: userData.name, email: userData.email, role: userData.role },
-        });
+        }).catch(() => {});
       }
 
-      // 5. Send verification email via EmailJS (fire-and-forget)
+      // 5. Send verification email (fire-and-forget)
       sendVerificationEmail({
         name: userData.name.trim(),
         email: userData.email.trim().toLowerCase(),
         token: verificationToken,
         password: userData.password,
         role: userData.role,
-      }).catch(() => {}); // silently ignore email failures
+      }).catch(() => {});
 
       return { success: true };
     } catch (e: any) {
@@ -239,14 +245,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Delete: remove profile row directly (RLS allows cert officers)
+  // Without a profile, the user can't access anything.
   const deleteUser = async (id: string) => {
-    if (id === user?.id) return false; // Can't delete self
+    if (id === user?.id) return false;
     try {
-      await callEdgeFunction('delete-user', { userId: id });
+      const { error } = await supabase.from("profiles").delete().eq("id", id);
+      if (error) {
+        console.error("Delete profile failed:", error);
+        // Fallback: try Edge Function if deployed
+        try {
+          await callEdgeFunction('delete-user', { userId: id });
+        } catch { return false; }
+      }
       if (user) {
         await supabase.from("audit_log").insert({
           user_id: user.id, action: "delete_user", entity_type: "profile", entity_id: id,
-        });
+        }).catch(() => {});
       }
       return true;
     } catch (e) {
@@ -257,13 +272,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateUserRole = async (id: string, role: UserRole) => {
     const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
-    if (!error && user) {
+    if (error) {
+      console.error("Update role failed:", error);
+      return false;
+    }
+    if (user) {
       await supabase.from("audit_log").insert({
         user_id: user.id, action: "update_role", entity_type: "profile", entity_id: id,
         details: { new_role: role },
-      });
+      }).catch(() => {});
     }
-    return !error;
+    return true;
   };
 
   const resetPassword = async (id: string, newPassword: string) => {
@@ -278,11 +297,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const suspendUser = async (id: string) => {
     const { error } = await supabase.from("profiles").update({ status: "suspended" }).eq("id", id);
+    if (error) console.error("Suspend failed:", error);
     return !error;
   };
 
   const activateUser = async (id: string) => {
     const { error } = await supabase.from("profiles").update({ status: "active" }).eq("id", id);
+    if (error) console.error("Activate failed:", error);
     return !error;
   };
 
