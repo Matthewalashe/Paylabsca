@@ -23,6 +23,8 @@ import FinancialRecordsPage from "@/pages/certification/FinancialRecordsPage";
 import PaymentPage from "@/pages/PaymentPage";
 import InvoicePublicPage from "@/pages/InvoicePublicPage";
 import RevenueReceiptPage from "@/pages/RevenueReceiptPage";
+import VerifyEmailPage from "@/pages/VerifyEmailPage";
+import EmailVerificationGate from "@/components/layout/EmailVerificationGate";
 
 // Context Providers
 import { AuthProvider } from "@/lib/auth";
@@ -42,73 +44,74 @@ export default function App() {
               {/* Public pages */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
 
               {/* Billing Officer Routes */}
               <Route path="/billing" element={
                 <ProtectedRoute allowedRoles={["billing_officer"]}>
-                  <AppShell><BillingDashboard /></AppShell>
+                  <EmailVerificationGate><AppShell><BillingDashboard /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
               
               {/* Certification Officer Routes */}
               <Route path="/certification" element={
                 <ProtectedRoute allowedRoles={["certification_officer"]}>
-                  <AppShell><CertDashboard /></AppShell>
+                  <EmailVerificationGate><AppShell><CertDashboard /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
               <Route path="/certification/review/:id" element={
                 <ProtectedRoute allowedRoles={["certification_officer"]}>
-                  <AppShell><CertReviewPage /></AppShell>
+                  <EmailVerificationGate><AppShell><CertReviewPage /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
               <Route path="/certification/users" element={
                 <ProtectedRoute allowedRoles={["certification_officer"]}>
-                  <AppShell><UserManagementPage /></AppShell>
+                  <EmailVerificationGate><AppShell><UserManagementPage /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
               <Route path="/certification/pending" element={
                 <ProtectedRoute allowedRoles={["certification_officer"]}>
-                  <AppShell><PendingReviewPage /></AppShell>
+                  <EmailVerificationGate><AppShell><PendingReviewPage /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
               <Route path="/certification/approved" element={
                 <ProtectedRoute allowedRoles={["certification_officer"]}>
-                  <AppShell><ApprovedInvoicesPage /></AppShell>
+                  <EmailVerificationGate><AppShell><ApprovedInvoicesPage /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
               <Route path="/certification/settings" element={
                 <ProtectedRoute allowedRoles={["certification_officer"]}>
-                  <AppShell><CertSettingsPage /></AppShell>
+                  <EmailVerificationGate><AppShell><CertSettingsPage /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
               <Route path="/certification/financials" element={
                 <ProtectedRoute allowedRoles={["certification_officer"]}>
-                  <AppShell><FinancialRecordsPage /></AppShell>
+                  <EmailVerificationGate><AppShell><FinancialRecordsPage /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
 
               {/* Shared App Pages (both roles) */}
               <Route path="/invoices" element={
-                <ProtectedRoute><AppShell><InvoiceListPage /></AppShell></ProtectedRoute>
+                <ProtectedRoute><EmailVerificationGate><AppShell><InvoiceListPage /></AppShell></EmailVerificationGate></ProtectedRoute>
               } />
               <Route path="/invoices/new" element={
                 <ProtectedRoute allowedRoles={["billing_officer"]}>
-                  <AppShell><InvoiceEditorPage /></AppShell>
+                  <EmailVerificationGate><AppShell><InvoiceEditorPage /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
               <Route path="/invoices/:id" element={
-                <ProtectedRoute><AppShell><InvoiceViewPage /></AppShell></ProtectedRoute>
+                <ProtectedRoute><EmailVerificationGate><AppShell><InvoiceViewPage /></AppShell></EmailVerificationGate></ProtectedRoute>
               } />
               <Route path="/invoices/:id/edit" element={
                 <ProtectedRoute allowedRoles={["billing_officer"]}>
-                  <AppShell><InvoiceEditorPage /></AppShell>
+                  <EmailVerificationGate><AppShell><InvoiceEditorPage /></AppShell></EmailVerificationGate>
                 </ProtectedRoute>
               } />
               <Route path="/revenue-codes" element={
-                <ProtectedRoute><AppShell><RevenueCodesPage /></AppShell></ProtectedRoute>
+                <ProtectedRoute><EmailVerificationGate><AppShell><RevenueCodesPage /></AppShell></EmailVerificationGate></ProtectedRoute>
               } />
               <Route path="/notifications" element={
-                <ProtectedRoute><AppShell><NotificationsPage /></AppShell></ProtectedRoute>
+                <ProtectedRoute><EmailVerificationGate><AppShell><NotificationsPage /></AppShell></EmailVerificationGate></ProtectedRoute>
               } />
               
               {/* Public Payment Gateway */}

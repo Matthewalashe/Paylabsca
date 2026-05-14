@@ -158,16 +158,18 @@ export async function sendInvoiceEmail(invoice: InvoiceData): Promise<boolean> {
 }
 
 // ============================================================
-// Welcome / Account Confirmation Email
+// Email Verification System (replaces broken Supabase SMTP)
 // ============================================================
 
-function buildWelcomeEmailHtml(params: {
+function buildVerificationEmailHtml(params: {
   name: string;
   email: string;
-  password: string;
-  role: string;
+  token: string;
+  password?: string;
+  role?: string;
 }): string {
-  const loginUrl = `${window.location.origin}/login`;
+  const verifyUrl = `${window.location.origin}/verify-email?token=${params.token}`;
+  const isNewAccount = !!params.password;
   const roleName = params.role === "certification_officer"
     ? "Certification Officer"
     : "Billing Officer";
@@ -176,37 +178,52 @@ function buildWelcomeEmailHtml(params: {
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
   <div style="background-color: #003200; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
     <h1 style="color: #ffffff; font-size: 18px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Lagos State Building Control Agency</h1>
-    <p style="color: #90EE90; font-size: 12px; margin: 4px 0 0;">Official Billing System — Account Created</p>
+    <p style="color: #90EE90; font-size: 12px; margin: 4px 0 0;">Official Billing System — Email Verification</p>
   </div>
   <div style="padding: 24px; background-color: #ffffff; border: 1px solid #e5e7eb;">
     <p style="color: #1f2937; font-size: 15px;">Dear <strong>${params.name}</strong>,</p>
     <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
-      Your LASBCA Digital Portal account has been created. You can now sign in using the credentials below.
+      ${isNewAccount
+        ? "Your LASBCA Digital Portal account has been created. Please verify your email address by clicking the button below."
+        : "Please verify your email address by clicking the button below."}
     </p>
-    <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 16px 0;">
+
+    <div style="text-align: center; margin: 28px 0;">
+      <a href="${verifyUrl}" style="display: inline-block; background-color: #006400; color: #ffffff; font-weight: 700; font-size: 16px; padding: 16px 48px; border-radius: 8px; text-decoration: none; letter-spacing: 0.5px;">
+        ✓ Verify My Email
+      </a>
+    </div>
+
+    <div style="text-align: center; margin: 12px 0 20px;">
+      <p style="color: #9ca3af; font-size: 11px; margin-bottom: 6px;">Or copy and paste this link into your browser:</p>
+      <p style="color: #006400; font-size: 12px; word-break: break-all;">
+        <a href="${verifyUrl}" style="color: #006400;">${verifyUrl}</a>
+      </p>
+    </div>
+
+    ${isNewAccount ? `
+    <div style="background-color: #f0fdf4; padding: 16px; border-radius: 8px; border: 1px solid #bbf7d0; margin: 20px 0;">
+      <p style="color: #166534; font-size: 13px; font-weight: 700; margin: 0 0 10px;">Your Login Credentials</p>
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
-          <td style="color: #6b7280; font-size: 14px; padding: 8px 0;">Email</td>
-          <td style="text-align: right; font-weight: 700; color: #1f2937; font-family: monospace; padding: 8px 0;">${params.email}</td>
+          <td style="color: #6b7280; font-size: 13px; padding: 6px 0;">Email</td>
+          <td style="text-align: right; font-weight: 700; color: #1f2937; font-family: monospace; font-size: 13px;">${params.email}</td>
         </tr>
         <tr>
-          <td style="color: #6b7280; font-size: 14px; padding: 8px 0; border-top: 1px solid #e5e7eb;">Password</td>
-          <td style="text-align: right; font-weight: 700; color: #1f2937; font-family: monospace; border-top: 1px solid #e5e7eb; padding: 8px 0;">${params.password}</td>
+          <td style="color: #6b7280; font-size: 13px; padding: 6px 0; border-top: 1px solid #dcfce7;">Password</td>
+          <td style="text-align: right; font-weight: 700; color: #1f2937; font-family: monospace; font-size: 13px; border-top: 1px solid #dcfce7;">${params.password}</td>
         </tr>
         <tr>
-          <td style="color: #6b7280; font-size: 14px; padding: 8px 0; border-top: 1px solid #e5e7eb;">Role</td>
-          <td style="text-align: right; font-weight: 700; color: #006400; border-top: 1px solid #e5e7eb; padding: 8px 0;">${roleName}</td>
+          <td style="color: #6b7280; font-size: 13px; padding: 6px 0; border-top: 1px solid #dcfce7;">Role</td>
+          <td style="text-align: right; font-weight: 700; color: #006400; font-size: 13px; border-top: 1px solid #dcfce7;">${roleName}</td>
         </tr>
       </table>
     </div>
-    <div style="text-align: center; margin: 24px 0;">
-      <a href="${loginUrl}" style="display: inline-block; background-color: #006400; color: #ffffff; font-weight: 700; font-size: 15px; padding: 14px 40px; border-radius: 6px; text-decoration: none;">
-        Sign In to Your Account
-      </a>
-    </div>
+    ` : ""}
+
     <div style="background-color: #FEF3C7; padding: 12px 16px; border-radius: 6px; border: 1px solid #F59E0B; margin: 16px 0;">
-      <p style="color: #92400E; font-size: 13px; margin: 0; line-height: 1.5;">
-        <strong>⚠ Security Notice:</strong> Please change your password after your first sign-in. Do not share your credentials with anyone.
+      <p style="color: #92400E; font-size: 12px; margin: 0; line-height: 1.5;">
+        <strong>⚠ Security:</strong> ${isNewAccount ? "Change your password after first sign-in. " : ""}Do not share this email. This verification link is single-use.
       </p>
     </div>
   </div>
@@ -219,26 +236,27 @@ function buildWelcomeEmailHtml(params: {
 }
 
 /**
- * Send a welcome/confirmation email to a newly created user.
- * Includes their login credentials and a link to sign in.
+ * Send a verification email to a user.
+ * Used for new account creation (includes credentials) and resend requests.
  * Does NOT throw on failure — account creation should still succeed.
  */
-export async function sendWelcomeEmail(params: {
+export async function sendVerificationEmail(params: {
   name: string;
   email: string;
-  password: string;
-  role: string;
+  token: string;
+  password?: string;
+  role?: string;
 }): Promise<boolean> {
   if (!isEmailConfigured()) {
-    console.warn("[EmailJS] Not configured — skipping welcome email.");
+    console.warn("[EmailJS] Not configured — skipping verification email.");
     return false;
   }
 
   ensureInit();
 
-  const roleName = params.role === "certification_officer"
-    ? "Certification Officer"
-    : "Billing Officer";
+  const subject = params.password
+    ? "LASBCA Portal — Verify Your Email & Account Credentials"
+    : "LASBCA Portal — Verify Your Email Address";
 
   const templateParams: Record<string, string> = {
     to_email: params.email,
@@ -248,16 +266,16 @@ export async function sendWelcomeEmail(params: {
     user_email: params.email,
     to_name: params.name,
     from_name: "LASBCA Billing System",
-    subject: `Your LASBCA Portal Account Has Been Created — ${roleName}`,
-    message: buildWelcomeEmailHtml(params),
+    subject,
+    message: buildVerificationEmailHtml(params),
   };
 
   try {
     const response = await emailjs.send(SERVICE_ID!, TEMPLATE_ID!, templateParams, PUBLIC_KEY!);
-    console.log("[EmailJS] Welcome email sent:", response.status, response.text);
+    console.log("[EmailJS] Verification email sent:", response.status, response.text);
     return true;
   } catch (err: unknown) {
-    console.error("[EmailJS] Welcome email failed:", err);
+    console.error("[EmailJS] Verification email failed:", err);
     return false;
   }
 }

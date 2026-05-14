@@ -2,13 +2,14 @@
 // auth.tsx — Supabase-backed authentication
 // ============================================================
 // Real JWT sessions via Supabase Auth.
-// Cert Officers create users via Edge Function (admin API).
-// Falls back to offline mode if Supabase is unavailable.
+// Supabase auto-confirms users (via DB trigger) so signIn works
+// immediately. Email verification is handled separately via our
+// own token + EmailJS system.
 // ============================================================
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { supabase, createIsolatedClient, callEdgeFunction } from "./supabase";
-import { sendWelcomeEmail } from "./email-service";
+import { sendVerificationEmail } from "./email-service";
 
 export type UserRole = "billing_officer" | "certification_officer";
 
@@ -21,6 +22,7 @@ export interface AppUser {
   role: UserRole;
   department: string;
   avatar?: string;
+  emailVerified: boolean;
 }
 
 interface AuthContextType {
@@ -67,6 +69,7 @@ function toAppUser(profile: any): AppUser {
     role: profile.role as UserRole,
     department: profile.department || "Building Certification Department",
     avatar: profile.avatar || profile.name?.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2),
+    emailVerified: profile.email_verified ?? true, // default true for legacy rows
   };
 }
 
@@ -178,8 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const isolatedClient = createIsolatedClient();
 
       // 1. Create auth user via signUp
-      // "Confirm email" must be DISABLED in Supabase Dashboard → Auth → Providers → Email
-      // so that new users are auto-confirmed and can sign in immediately.
+      // DB trigger auto-confirms the user so they can sign in immediately.
       const { data: authData, error: authError } = await isolatedClient.auth.signUp({
         email: userData.email.trim().toLowerCase(),
         password: userData.password,
@@ -189,7 +191,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: authError?.message || "Failed to create auth account." };
       }
 
-      // 2. Insert profile row
+      // 2. Generate verification token
+      const verificationToken = crypto.randomUUID();
+
+      // 3. Insert profile row with verification token
       const { error: profileError } = await supabase.from("profiles").insert({
         id: authData.user.id,
         name: userData.name.trim(),
@@ -200,13 +205,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         department: userData.department || "Building Certification Department",
         avatar: userData.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2),
         status: "active",
+        email_verified: false,
+        verification_token: verificationToken,
       });
 
       if (profileError) {
         return { success: false, error: profileError.message };
       }
 
-      // 3. Audit log
+      // 4. Audit log
       if (user) {
         await supabase.from("audit_log").insert({
           user_id: user.id,
@@ -217,10 +224,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // 4. Send welcome/confirmation email with login credentials (fire-and-forget)
-      sendWelcomeEmail({
+      // 5. Send verification email via EmailJS (fire-and-forget)
+      sendVerificationEmail({
         name: userData.name.trim(),
         email: userData.email.trim().toLowerCase(),
+        token: verificationToken,
         password: userData.password,
         role: userData.role,
       }).catch(() => {}); // silently ignore email failures
@@ -297,6 +305,6 @@ export function useAuth() {
 // Backward compat exports
 export const ALL_USERS: AppUser[] = [];
 export const DEMO_USERS: Record<UserRole, AppUser> = {
-  billing_officer: { id: "", name: "", email: "", phone: "", oracleNumber: "", role: "billing_officer", department: "" },
-  certification_officer: { id: "", name: "", email: "", phone: "", oracleNumber: "", role: "certification_officer", department: "" },
+  billing_officer: { id: "", name: "", email: "", phone: "", oracleNumber: "", role: "billing_officer", department: "", emailVerified: true },
+  certification_officer: { id: "", name: "", email: "", phone: "", oracleNumber: "", role: "certification_officer", department: "", emailVerified: true },
 };
