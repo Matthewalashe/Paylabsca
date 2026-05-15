@@ -14,11 +14,11 @@ import { toast } from "sonner";
 import {
   Users, Plus, Shield, ClipboardCheck, Trash2, ArrowUpCircle, ArrowDownCircle,
   Mail, X, Search, Phone, Hash, KeyRound, Eye, EyeOff, RotateCcw,
-  UserCheck, UserX, CheckCircle, AlertTriangle,
+  UserCheck, UserX, CheckCircle, AlertTriangle, Pencil,
 } from "lucide-react";
 
 export default function UserManagementPage() {
-  const { getAllUsers, createUser, deleteUser, updateUserRole, resetPassword, suspendUser, activateUser } = useAuth();
+  const { getAllUsers, createUser, deleteUser, updateUserRole, updateUserProfile, resetPassword, suspendUser, activateUser } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
 
@@ -54,6 +54,38 @@ export default function UserManagementPage() {
     userId?: string;
     userName?: string;
   } | null>(null);
+
+  // Edit user modal
+  const [editModal, setEditModal] = useState<any | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editOracle, setEditOracle] = useState("");
+  const [editDepartment, setEditDepartment] = useState("");
+
+  const openEditModal = (u: any) => {
+    setEditModal(u);
+    setEditName(u.name);
+    setEditPhone(u.phone);
+    setEditOracle(u.oracleNumber);
+    setEditDepartment(u.department);
+  };
+
+  const handleEditUser = async () => {
+    if (!editModal) return;
+    const ok = await updateUserProfile(editModal.id, {
+      name: editName,
+      phone: editPhone,
+      oracleNumber: editOracle,
+      department: editDepartment,
+    });
+    if (ok) {
+      toast.success(`Updated ${editName}'s profile.`);
+      loadUsers();
+    } else {
+      toast.error("Failed to update user profile.");
+    }
+    setEditModal(null);
+  };
 
   const filteredUsers = users.filter(u =>
     u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -344,6 +376,15 @@ export default function UserManagementPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1 flex-wrap">
+                      {/* Edit Profile */}
+                      <Button
+                        variant="ghost" size="sm"
+                        className="h-8 text-xs text-violet-600 hover:text-violet-700"
+                        onClick={() => openEditModal(u)}
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </Button>
+
                       {/* Reset Password */}
                       <Button
                         variant="ghost" size="sm"
@@ -433,6 +474,42 @@ export default function UserManagementPage() {
               <Button variant="ghost" onClick={() => { setResetModal(null); setResetNewPass(""); }}>Cancel</Button>
               <Button onClick={handleResetPassword} disabled={resetNewPass.length < 6}>
                 <KeyRound className="w-4 h-4" /> Set New Password
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== EDIT USER MODAL ===== */}
+      {editModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white max-w-md w-full rounded-2xl shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold text-gray-900">Edit User Profile</h3>
+              <button onClick={() => setEditModal(null)} className="p-1.5 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-name">Full Name</Label>
+                <Input id="edit-name" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Full Name" />
+              </div>
+              <div>
+                <Label htmlFor="edit-phone">Phone Number</Label>
+                <Input id="edit-phone" value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="Phone" />
+              </div>
+              <div>
+                <Label htmlFor="edit-oracle">Oracle Number</Label>
+                <Input id="edit-oracle" value={editOracle} onChange={e => setEditOracle(e.target.value)} placeholder="Oracle Number" />
+              </div>
+              <div>
+                <Label htmlFor="edit-dept">Department</Label>
+                <Input id="edit-dept" value={editDepartment} onChange={e => setEditDepartment(e.target.value)} placeholder="Department" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <Button variant="ghost" onClick={() => setEditModal(null)}>Cancel</Button>
+              <Button onClick={handleEditUser} disabled={!editName.trim()}>
+                <CheckCircle className="w-4 h-4" /> Save Changes
               </Button>
             </div>
           </div>

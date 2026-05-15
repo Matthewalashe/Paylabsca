@@ -89,3 +89,39 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.generate_verification_token(UUID) TO authenticated;
+
+-- ==========================================
+-- BLOCK 6: Fix notification visibility
+-- Billing officers only see THEIR OWN
+-- notifications, not other billing officers'
+-- ==========================================
+DROP POLICY IF EXISTS "notif_select" ON notifications;
+CREATE POLICY "notif_select" ON notifications FOR SELECT TO authenticated
+  USING (
+    target_user_id = auth.uid()
+    OR (
+      target_role = 'certification_officer'
+      AND EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'certification_officer')
+    )
+    OR target_role = 'all'
+  );
+
+-- Also fix notification update policy
+DROP POLICY IF EXISTS "notif_update" ON notifications;
+CREATE POLICY "notif_update" ON notifications FOR UPDATE TO authenticated
+  USING (
+    target_user_id = auth.uid()
+    OR (
+      target_role = 'certification_officer'
+      AND EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'certification_officer')
+    )
+    OR target_role = 'all'
+  );
+
+-- ==========================================
+-- BLOCK 7: Enable soft-delete (add 'deleted'
+-- as valid status for profiles)
+-- ==========================================
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_status_check;
+ALTER TABLE profiles ADD CONSTRAINT profiles_status_check
+  CHECK (status IN ('active', 'suspended', 'deleted'));

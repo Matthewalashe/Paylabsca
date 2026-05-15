@@ -35,6 +35,7 @@ interface AuthContextType {
   createUser: (data: { name: string; email: string; phone: string; oracleNumber: string; role: UserRole; password: string; department?: string }) => Promise<{ success: boolean; error?: string }>;
   deleteUser: (id: string) => Promise<boolean>;
   updateUserRole: (id: string, role: UserRole) => Promise<boolean>;
+  updateUserProfile: (id: string, data: { name?: string; phone?: string; oracleNumber?: string; department?: string }) => Promise<boolean>;
   resetPassword: (id: string, newPassword: string) => Promise<boolean>;
   suspendUser: (id: string) => Promise<boolean>;
   activateUser: (id: string) => Promise<boolean>;
@@ -51,6 +52,7 @@ const AuthContext = createContext<AuthContextType>({
   createUser: async () => ({ success: false }),
   deleteUser: async () => false,
   updateUserRole: async () => false,
+  updateUserProfile: async () => false,
   resetPassword: async () => false,
   suspendUser: async () => false,
   activateUser: async () => false,
@@ -133,6 +135,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: "Account suspended. Contact your administrator." };
       }
 
+      if (profile?.status === "deleted") {
+        await supabase.auth.signOut();
+        return { success: false, error: "Account has been removed. Contact your administrator." };
+      }
+
       if (!profile) {
         await supabase.auth.signOut();
         return { success: false, error: "Account not found. Contact your administrator." };
@@ -161,11 +168,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error || !data) return [];
 
-    return data.map((p: any) => ({
-      ...toAppUser(p),
-      status: p.status || "active",
-      createdAt: p.created_at,
-    }));
+    // Filter out soft-deleted users from the list
+    return data
+      .filter((p: any) => p.status !== "deleted")
+      .map((p: any) => ({
+        ...toAppUser(p),
+        status: p.status || "active",
+        createdAt: p.created_at,
+      }));
   };
 
   const createUser = async (userData: {
@@ -258,14 +268,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Delete: remove profile row directly (RLS must allow cert officers)
+  // Soft-delete: mark as 'deleted' instead of removing the row
+  // (hard delete fails due to FK constraints from invoices/audit_log)
   const deleteUser = async (id: string) => {
     if (id === user?.id) return false;
     try {
-      // Use .select() to verify the row was actually deleted
       const { data, error } = await supabase
         .from("profiles")
-        .delete()
+        .update({ status: "deleted" })
         .eq("id", id)
         .select();
 
@@ -273,14 +283,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Delete failed:", error.message);
         return false;
       }
-
-      // RLS may silently block — check if any rows were actually deleted
       if (!data || data.length === 0) {
-        console.error("Delete blocked by RLS — no rows affected. Run fix-email-confirm.sql!");
+        console.error("Delete blocked by RLS");
         return false;
       }
 
-      // Audit log
       if (user) {
         supabase.from("audit_log").insert({
           user_id: user.id, action: "delete_user", entity_type: "profile", entity_id: id,
@@ -291,6 +298,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Delete error:", e);
       return false;
     }
+  };
+
+  // Edit user profile data (name, phone, oracle number, department)
+  const updateUserProfile = async (id: string, data: { name?: string; phone?: string; oracleNumber?: string; department?: string }) => {
+    const updateData: Record<string, any> = {};
+    if (data.name !== undefined) updateData.name = data.name.trim();
+    if (data.phone !== undefined) updateData.phone = data.phone.trim();
+    if (data.oracleNumber !== undefined) updateData.oracle_number = data.oracleNumber.trim();
+    if (data.department !== undefined) updateData.department = data.department.trim();
+
+    if (Object.keys(updateData).length === 0) return false;
+
+    // Also update avatar if name changed
+    if (updateData.name) {
+      updateData.avatar = updateData.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+    }
+
+    const { data: result, error } = await supabase
+      .from("profiles")
+      .update(updateData)
+      .eq("id", id)
+      .select();
+
+    if (error) {
+      console.error("Update profile failed:", error.message);
+      return false;
+    }
+    if (!result || result.length === 0) {
+      console.error("Update profile blocked by RLS");
+      return false;
+    }
+    return true;
   };
 
   const updateUserRole = async (id: string, role: UserRole) => {
@@ -367,7 +406,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{
       user, isAuthenticated: !!user, isLoading,
       loginWithCredentials, login, logout,
-      getAllUsers, createUser, deleteUser, updateUserRole,
+      getAllUsers, createUser, deleteUser, updateUserRole, updateUserProfile,
       resetPassword, suspendUser, activateUser,
     }}>
       {children}
